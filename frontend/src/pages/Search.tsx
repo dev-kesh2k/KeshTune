@@ -1,3 +1,4 @@
+import { mediaUrl } from '../lib/format';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Clock, Search as SearchIcon, UserRound, X } from 'lucide-react';
@@ -171,6 +172,11 @@ export default function Search() {
             <Empty icon={<SearchIcon className="h-10 w-10" />} title={`Nada encontrado para "${q}"`} text="Confira a ortografia ou tente outras palavras." />
           ) : result ? (
             <div className={busy ? 'opacity-60' : ''}>
+              {!!result.playlists?.length && (
+                <Section title="Playlists">
+                  <div className={tileGrid}>{result.playlists.map((p) => <PlaylistTile key={p.id} p={p} grid />)}</div>
+                </Section>
+              )}
               {!!result.tracks?.length && (
                 <Section title="Músicas">
                   <TrackList
@@ -191,11 +197,6 @@ export default function Search() {
               {!!result.albums?.length && (
                 <Section title="Álbuns">
                   <div className={tileGrid}>{result.albums.map((a) => <AlbumTile key={a.id} a={a} grid />)}</div>
-                </Section>
-              )}
-              {!!result.playlists?.length && (
-                <Section title="Playlists">
-                  <div className={tileGrid}>{result.playlists.map((p) => <PlaylistTile key={p.id} p={p} grid />)}</div>
                 </Section>
               )}
               {!!result.users?.length && (
@@ -256,8 +257,9 @@ export default function Search() {
                       .filter((g) => g.kind === kind)
                       .map((g) => (
                         <Link key={g.id} to={`/genre/${g.id}`} className="relative flex aspect-[16/10] min-w-0 overflow-hidden rounded-xl p-3 transition active:scale-95" style={{ background: g.color }}>
-                          <span className="break-words text-[clamp(0.95rem,4vw,1.2rem)] font-bold leading-tight">{g.name}</span>
-                          <span className="absolute bottom-2 right-3 text-xs font-semibold text-white/80">{g.track_count ? `${g.track_count} ${g.track_count === 1 ? 'faixa' : 'faixas'}` : ''}</span>
+                          <span className="relative z-10 break-words text-[clamp(0.95rem,4vw,1.2rem)] font-bold leading-tight">{g.name}</span>
+                          {g.cover_url && <img src={mediaUrl(g.cover_url)!} alt="" loading="lazy" className="absolute -bottom-2 -right-3 h-[4.5rem] w-[4.5rem] rotate-[25deg] rounded-md object-cover shadow-lg" />}
+                          <span className="absolute bottom-2 left-3 z-10 text-xs font-semibold text-white/80">{g.track_count ? `${g.track_count} ${g.track_count === 1 ? 'faixa' : 'faixas'}` : ''}</span>
                         </Link>
                       ))}
                   </div>

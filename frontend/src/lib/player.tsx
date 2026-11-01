@@ -45,6 +45,8 @@ type PlayerApi = PlayerState & {
   startRadio: (seedType: 'track' | 'artist' | 'genre', id: string | number, name?: string) => Promise<void>;
   patchTrack: (id: string, patch: Partial<Track>) => void;
   ytHost: React.RefObject<HTMLDivElement>;
+  videoMode: boolean;
+  setVideoMode: (v: boolean) => void;
 };
 
 const Ctx = createContext<PlayerApi>(null as unknown as PlayerApi);
@@ -115,6 +117,11 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
     audio.current.preload = 'auto';
   }
   const ytHost = useRef<HTMLDivElement>(null);
+  const [videoMode, setVideoModeState] = useState(() => localStorage.getItem('spx:video-mode') === '1');
+  const setVideoMode = useCallback((v: boolean) => {
+    localStorage.setItem('spx:video-mode', v ? '1' : '0');
+    setVideoModeState(v);
+  }, []);
   const yt = useRef<any>(null);
   const engine = useRef<'audio' | 'yt' | null>(null);
   const loadSeq = useRef(0);
@@ -621,7 +628,7 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
     queue, index, current, playing, loading, position, duration: duration || current?.track.duration_ms || 0, volume, muted, shuffle, repeat,
     autoRadio, context, offlineSource,
     playTracks, toggle, next: () => advance(false), prev, seek, setVolume, toggleMute, toggleShuffle, cycleRepeat,
-    setAutoRadio: setAutoRadioState, addToQueue, playNext, removeFromQueue, moveInQueue, clearUpcoming, jumpTo, startRadio, patchTrack, ytHost,
+    setAutoRadio: setAutoRadioState, addToQueue, playNext, removeFromQueue, moveInQueue, clearUpcoming, jumpTo, startRadio, patchTrack, ytHost, videoMode, setVideoMode,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
