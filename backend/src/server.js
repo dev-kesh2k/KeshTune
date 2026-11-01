@@ -16,6 +16,7 @@ import { libraryRouter } from './routes/library.js';
 import { playbackRouter } from './routes/playback.js';
 import { offlineRouter } from './routes/offline.js';
 import { adminRouter } from './routes/admin.js';
+import { importsRouter, startImportWorker } from './routes/imports.js';
 
 const app = express();
 app.set('trust proxy', process.env.TRUST_PROXY ? process.env.TRUST_PROXY.split(',') : 'loopback');
@@ -69,7 +70,7 @@ api.get('/events', (req, res, next) => {
   }
 });
 
-for (const r of [authRouter, meRouter, mediaRouter, catalogRouter, searchRouter, playlistsRouter, libraryRouter, playbackRouter, offlineRouter, adminRouter]) {
+for (const r of [authRouter, meRouter, mediaRouter, catalogRouter, searchRouter, playlistsRouter, libraryRouter, playbackRouter, offlineRouter, adminRouter, importsRouter]) {
   api.use(r);
 }
 
@@ -118,6 +119,7 @@ const port = Number(process.env.PORT) || 3000;
   }
   await seed();
   await startRealtime();
+  startImportWorker();
   app.listen(port, '0.0.0.0', () => console.log(`Spotify X API em 0.0.0.0:${port} (prefixo ${publicPath || '/'})`));
 })().catch((e) => {
   console.error('[boot] falha ao iniciar:', e);

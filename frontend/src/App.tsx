@@ -26,6 +26,7 @@ import AdminLayout from './pages/admin/AdminLayout';
 import Dashboard from './pages/admin/Dashboard';
 import Users from './pages/admin/Users';
 import Tracks from './pages/admin/Tracks';
+import Imports from './pages/admin/Imports';
 import { Albums, Artists, Genres } from './pages/admin/Catalog';
 import { AdminSettings, Audit, Moderation, Reports } from './pages/admin/Ops';
 
@@ -58,6 +59,7 @@ function Authed() {
                 <Route index element={<Dashboard />} />
                 <Route path="users" element={<Users />} />
                 <Route path="tracks" element={<Tracks />} />
+                <Route path="imports" element={<Imports />} />
                 <Route path="artists" element={<Artists />} />
                 <Route path="albums" element={<Albums />} />
                 <Route path="genres" element={<Genres />} />
