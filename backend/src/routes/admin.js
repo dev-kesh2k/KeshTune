@@ -226,18 +226,21 @@ setInterval(() => {
   } catch { /* */ }
 }, 3600 * 1000).unref();
 
-adminRouter.post('/admin/uploads/audio', audioUpload.single('file'), ah2(async (req, res) => {
-  if (!req.file) throw bad('Envie o arquivo de áudio no campo "file"');
+/**
+ * Lê os metadados de um áudio já gravado em TMP_DIR (nome = upload_id) e grava o .json ao lado,
+ * deixando-o pronto para createTrack. Apaga o arquivo se for inválido.
+ */
+export async function probeAudio(file) {
   let meta;
   try {
-    meta = await parseFile(req.file.path, { duration: true, skipCovers: false });
+    meta = await parseFile(file.path, { duration: true, skipCovers: false });
   } catch {
-    fs.rmSync(req.file.path, { force: true });
+    fs.rmSync(file.path, { force: true });
     throw bad('Arquivo de áudio inválido ou corrompido');
   }
   const mime = CONTAINER_MIME[meta.format.container] || (meta.format.container?.includes('M4A') || meta.format.container?.includes('isom') ? 'audio/mp4' : null);
   if (!mime || !meta.format.duration) {
-    fs.rmSync(req.file.path, { force: true });
+    fs.rmSync(file.path, { force: true });
     throw bad(`Formato não suportado (${meta.format.container || 'desconhecido'}). Use MP3, AAC/M4A, OGG/Opus, FLAC ou WAV.`);
   }
   const c = meta.common;
@@ -250,12 +253,12 @@ adminRouter.post('/admin/uploads/audio', audioUpload.single('file'), ah2(async (
     ? c.lyrics.map((l) => (typeof l === 'string' ? l : l.text || (l.syncText || []).map((s) => s.text).join('\n'))).filter(Boolean).join('\n')
     : null;
   const info = {
-    upload_id: req.file.filename,
-    original_name: req.file.originalname,
+    upload_id: file.filename,
+    original_name: file.originalname,
     mime,
-    size: req.file.size,
+    size: file.size,
     meta: {
-      title: c.title || req.file.originalname.replace(/\.[^.]+$/, ''),
+      title: c.title || file.originalname.replace(/\.[^.]+$/, ''),
       artists: c.artists?.length ? c.artists : c.artist ? [c.artist] : [],
       album: c.album || null,
       album_artist: c.albumartist || null,
@@ -273,8 +276,13 @@ adminRouter.post('/admin/uploads/audio', audioUpload.single('file'), ah2(async (
       cover_url,
     },
   };
-  fs.writeFileSync(`${req.file.path}.json`, JSON.stringify({ mime, size: req.file.size, bitrate_kbps: info.meta.bitrate_kbps, duration_ms: info.meta.duration_ms }));
-  res.status(201).json(info);
+  fs.writeFileSync(`${file.path}.json`, JSON.stringify({ mime, size: file.size, bitrate_kbps: info.meta.bitrate_kbps, duration_ms: info.meta.duration_ms }));
+  return info;
+}
+
+adminRouter.post('/admin/uploads/audio', audioUpload.single('file'), ah2(async (req, res) => {
+  if (!req.file) throw bad('Envie o arquivo de áudio no campo "file"');
+  res.status(201).json(await probeAudio(req.file));
 }));
 
 function youtubeId(url) {
@@ -411,8 +419,8 @@ adminRouter.get('/admin/tracks/:id', ah2(async (req, res) => {
   res.json(t);
 }));
 
-adminRouter.post('/admin/tracks', ah2(async (req, res) => {
-  const b = req.body || {};
+/** Cria a faixa (arquivo já enviado via probeAudio, ou YouTube) com créditos e álbum. Devolve o id. */
+export async function createTrack(b, userId) {
   const source = oneOf(b.source, 'Fonte', ['file', 'youtube']);
   const f = trackFields(b);
   let file = null;
@@ -444,7 +452,7 @@ adminRouter.post('/admin/tracks', ah2(async (req, res) => {
                            audio_size, checksum, bitrate_kbps, duration_ms, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [id, f.title, f.isrc, f.explicit, f.track_number, f.disc_number, f.lyrics, f.cover_url, source, ytId, audioName, file?.mime || null,
-        file?.size || null, checksum, file?.bitrate_kbps || null, file ? file.duration_ms : int(b.duration_ms, 'Duração', { min: 0 }) || 0, req.user.id]
+        file?.size || null, checksum, file?.bitrate_kbps || null, file ? file.duration_ms : int(b.duration_ms, 'Duração', { min: 0 }) || 0, userId]
     );
     const main = await saveTrackRelations(db, id, b);
     const albumId = await resolveAlbum(db, b, main);
@@ -454,7 +462,12 @@ adminRouter.post('/admin/tracks', ah2(async (req, res) => {
       fs.rmSync(path.join(TMP_DIR, `${file.id}.json`), { force: true });
     }
   });
-  await audit(req, 'admin.track_create', 'track', id, { title: f.title, source });
+  return { id, title: f.title, source };
+}
+
+adminRouter.post('/admin/tracks', ah2(async (req, res) => {
+  const { id, title, source } = await createTrack(req.body || {}, req.user.id);
+  await audit(req, 'admin.track_create', 'track', id, { title, source });
   res.status(201).json(await one(`${ADMIN_TRACK_SQL} WHERE t.id = $1`, [id]));
 }));
 
