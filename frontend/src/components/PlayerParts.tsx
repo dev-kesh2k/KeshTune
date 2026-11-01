@@ -238,9 +238,21 @@ export function NowPlaying({ open, onClose, onOpenQueue, onOpenLyrics }: { open:
             <MoreHorizontal className="h-6 w-6" />
           </button>
         </div>
+        {t.source === 'youtube' && (
+          <div className="mx-auto mt-3 flex rounded-full bg-white/10 p-1 text-sm font-semibold" role="tablist" aria-label="Música ou vídeo">
+            {([['Música', false], ['Vídeo', true]] as const).map(([label, v]) => (
+              <button key={label} role="tab" aria-selected={p.videoMode === v} onClick={() => p.setVideoMode(v)}
+                className={`rounded-full px-5 py-1.5 transition ${p.videoMode === v ? 'bg-white text-black' : 'text-white/70'}`}>{label}</button>
+            ))}
+          </div>
+        )}
         <div className="flex flex-1 items-center justify-center py-6">
-          {t.source === 'youtube' ? (
+          {t.source === 'youtube' && p.videoMode ? (
             <div className="aspect-video w-full" aria-hidden /> /* o player do YouTube flutua sobre este espaço */
+          ) : t.source === 'youtube' ? (
+            <div className="relative aspect-square w-full max-w-[min(100%,26rem,52dvh)] overflow-hidden rounded-md bg-surface2 shadow-2xl">
+              <img src={`https://i.ytimg.com/vi/${t.youtube_id}/hqdefault.jpg`} alt={t.title} className="absolute inset-0 h-full w-full scale-[1.34] object-cover" />
+            </div>
           ) : (
             <Cover url={t.cover_url} alt={t.title} className="w-full max-w-[min(100%,26rem,52dvh)] shadow-2xl" />
           )}

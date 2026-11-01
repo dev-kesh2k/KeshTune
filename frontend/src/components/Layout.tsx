@@ -170,13 +170,13 @@ export function Layout() {
       {/* Player do YouTube (oficial, visível enquanto toca) */}
       <div
         className={
-          !isYT
-            ? 'pointer-events-none fixed -left-[9999px] top-0 h-px w-px opacity-0'
+          !isYT || !player.videoMode
+            ? 'pointer-events-none fixed -left-[9999px] top-0 h-[180px] w-[320px] opacity-0'
             : nowOpen
               ? 'fixed inset-x-0 top-[max(5.5rem,calc(env(safe-area-inset-top)+5rem))] z-[65] mx-auto aspect-video w-[min(100%-2.5rem,36rem)] overflow-hidden rounded-xl shadow-2xl'
               : 'fixed bottom-[calc(9.5rem+env(safe-area-inset-bottom))] right-3 z-40 aspect-video w-[min(55vw,18rem)] overflow-hidden rounded-xl shadow-2xl ring-1 ring-white/10 lg:bottom-24'
         }
-        aria-hidden={!isYT}
+        aria-hidden={!isYT || !player.videoMode}
       >
         <div ref={player.ytHost} className="h-full w-full" />
       </div>

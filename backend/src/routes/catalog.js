@@ -77,6 +77,7 @@ catalogRouter.get('/me/recommendations', ah(async (req, res) => {
 catalogRouter.get('/browse/categories', ah(async (_req, res) => {
   const rows = await q(
     `SELECT g.id, g.name, g.kind, g.color,
+            (SELECT t.cover_url FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active' WHERE tg.genre_id = g.id AND t.cover_url IS NOT NULL ORDER BY t.popularity DESC, t.created_at DESC LIMIT 1) AS cover_url,
             (SELECT count(*) FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active' WHERE tg.genre_id = g.id)::int AS track_count
        FROM genres g ORDER BY g.kind, g.name`
   );
@@ -85,11 +86,11 @@ catalogRouter.get('/browse/categories', ah(async (_req, res) => {
 
 catalogRouter.get('/genres/:id', ah(async (req, res) => {
   const id = int(req.params.id, 'id', { min: 1, required: true });
-  const g = await one(`SELECT id, name, kind, color FROM genres WHERE id = $1`, [id]);
+  const g = await one(`SELECT g.id, g.name, g.kind, g.color, (SELECT t.cover_url FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active' WHERE tg.genre_id = g.id AND t.cover_url IS NOT NULL ORDER BY t.popularity DESC, t.created_at DESC LIMIT 1) AS cover_url FROM genres g WHERE g.id = $1`, [id]);
   if (!g) throw notFound('Gênero não encontrado');
   const rows = await q(
     `SELECT t.id FROM tracks t JOIN track_genres tg ON tg.track_id = t.id AND tg.genre_id = $1
-      WHERE t.status = 'active' ORDER BY t.popularity DESC, t.created_at DESC LIMIT 100`,
+      WHERE t.status = 'active' ORDER BY t.popularity DESC, t.created_at DESC LIMIT 500`,
     [id]
   );
   const albums = await albumCards(`EXISTS (SELECT 1 FROM tracks t JOIN track_genres tg ON tg.track_id = t.id WHERE t.album_id = al.id AND tg.genre_id = $1)`, [id], 20);
