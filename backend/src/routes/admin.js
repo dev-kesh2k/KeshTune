@@ -811,7 +811,7 @@ adminRouter.put('/admin/settings', ah2(async (req, res) => {
   if (b.youtube_enabled !== undefined) patch.youtube_enabled = !!b.youtube_enabled;
   if (b.max_offline_devices !== undefined) patch.max_offline_devices = int(b.max_offline_devices, 'Aparelhos', { min: 1, max: 20, required: true });
   if (b.max_offline_tracks !== undefined) patch.max_offline_tracks = int(b.max_offline_tracks, 'Faixas offline', { min: 1, max: 10000, required: true });
-  if (b.offline_license_days !== undefined) patch.offline_license_days = int(b.offline_license_days, 'Validade', { min: 1, max: 30, required: true });
+  if (b.offline_license_days !== undefined) patch.offline_license_days = int(b.offline_license_days, 'Validade', { min: 1, max: 3650, required: true });
   for (const [k, v] of Object.entries(patch)) {
     await q(`INSERT INTO app_settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [k, JSON.stringify(v)]);
   }
