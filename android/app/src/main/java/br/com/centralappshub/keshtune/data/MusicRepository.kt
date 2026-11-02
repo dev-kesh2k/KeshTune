@@ -225,8 +225,28 @@ class MusicRepository @Inject constructor(
         dao.insertDownload(DownloadEntity(track.id, bytes, System.currentTimeMillis()))
     }
 
-    suspend fun deleteDownload(id: String) = dao.deleteDownload(id)
+    suspend fun deleteDownload(id: String) {
+        dao.deleteDownload(id)
+        dao.removeFromDownloadGroups(id)
+        dao.deleteEmptyDownloadGroups()
+    }
+
     suspend fun clearDownloads() = dao.clearDownloads()
+
+    val downloadGroups: Flow<List<DownloadGroupRow>> = dao.downloadGroups()
+    val looseDownloads: Flow<List<Track>> = dao.looseDownloads().map { l -> l.map { it.toTrack() } }
+    fun downloadGroup(id: String): Flow<DownloadGroupEntity?> = dao.downloadGroup(id)
+    fun downloadGroupTracks(id: String): Flow<List<Track>> = dao.downloadGroupTracks(id).map { l -> l.map { it.toTrack() } }
+
+    suspend fun saveDownloadGroup(g: DownloadGroup, tracks: List<Track>) =
+        dao.saveDownloadGroup(DownloadGroupEntity(g.id, g.title, g.kind, g.image, System.currentTimeMillis()), tracks)
+
+    /** Apaga a coleção; devolve as músicas que só estavam nela (o DownloadManager apaga os arquivos). */
+    suspend fun deleteDownloadGroup(id: String): List<String> {
+        val only = dao.tracksOnlyIn(id)
+        dao.deleteDownloadGroup(id)
+        return only
+    }
 
     suspend fun cachedTrack(id: String): Track? = dao.track(id)?.toTrack()
 

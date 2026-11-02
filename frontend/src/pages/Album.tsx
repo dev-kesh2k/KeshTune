@@ -54,7 +54,7 @@ export default function Album() {
           </>
         }
       />
-      <PlayActions tracks={data.tracks} ctx={ctx}>
+      <PlayActions tracks={data.tracks} ctx={ctx} group={{ kind: 'Álbum', image: data.cover_url }}>
         <button className={`icon-btn ${data.saved ? 'text-accent' : ''}`} aria-label={data.saved ? 'Remover da biblioteca' : 'Salvar na biblioteca'} onClick={toggleSave}>
           <Heart className={`h-7 w-7 ${data.saved ? 'fill-accent' : ''}`} />
         </button>
