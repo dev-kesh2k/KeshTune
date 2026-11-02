@@ -3,6 +3,14 @@ import { one, q } from '../db.js';
 import { auth } from '../security.js';
 import { ah, int, notFound, oneOf, uuidParam } from '../util.js';
 import { albumCards, ARTIST_JSON, hydrateTracks, playlistCards } from '../views.js';
+import { artistTop, topStale, trendingArtistsBR } from './youtube.js';
+
+/** Cartões de artista na ordem dos ids. */
+async function artistCards(idList) {
+  const rows = await q(`SELECT id, name, image_url FROM artists WHERE id = ANY($1::uuid[])`, [idList]);
+  const map = new Map(rows.map((r) => [r.id, r]));
+  return idList.map((x) => map.get(x)).filter(Boolean);
+}
 
 export const catalogRouter = express.Router();
 catalogRouter.use(['/browse', '/tracks', '/albums', '/artists', '/genres', '/radio', '/me/recommendations'], auth());
@@ -80,7 +88,23 @@ catalogRouter.get('/browse/home', ah(async (req, res) => {
       { limit: 12, order: `(SELECT count(*) FROM library_items li WHERE li.item_type = 'playlist' AND li.item_id = p.id) DESC, p.updated_at DESC` }
     ),
   ]);
-  res.json({ catalog_size: catalogSize, recent, mix, top, fresh, releases, followed_releases: followedReleases, my_playlists: myPlaylists, public_playlists: publicPlaylists, artists });
+  // Artistas: os 10 em alta no Brasil (parada da Apple Music); sem acesso à parada, os mais tocados do catálogo
+  const trending = await trendingArtistsBR(u.id).then(artistCards).catch((e) => {
+    console.error('[home] artistas em alta:', e.message);
+    return null;
+  });
+  const myArtists = await q(
+    `SELECT a.id, a.name, a.image_url FROM (
+       SELECT ta.artist_id, count(*) AS n FROM play_history h
+         JOIN track_artists ta ON ta.track_id = h.track_id AND ta.role IN ('main','featured')
+        WHERE h.user_id = $1 AND h.played_at > now() - interval '90 days' GROUP BY ta.artist_id ORDER BY n DESC LIMIT 10) x
+       JOIN artists a ON a.id = x.artist_id ORDER BY x.n DESC`,
+    [u.id]
+  );
+  res.json({
+    catalog_size: catalogSize, recent, mix, top, fresh, releases, followed_releases: followedReleases, my_playlists: myPlaylists,
+    public_playlists: publicPlaylists, artists: trending?.length ? trending : artists, my_artists: myArtists,
+  });
 }));
 
 catalogRouter.get('/me/recommendations', ah(async (req, res) => {
@@ -161,11 +185,22 @@ catalogRouter.get('/artists/:id', ah(async (req, res) => {
     [id, req.user.id]
   );
   if (!a) throw notFound('Artista não encontrado', 'ARTIST_NOT_FOUND');
-  const top = await q(
-    `SELECT t.id FROM tracks t JOIN track_artists ta ON ta.track_id = t.id AND ta.artist_id = $1 AND ta.role IN ('main','featured')
-      WHERE t.status = 'active' GROUP BY t.id ORDER BY max(t.popularity) DESC, max(t.created_at) DESC LIMIT 10`,
+  // As 50 mais vistas no YouTube: na primeira vez espera a busca (alguns segundos); depois atualiza por semana em segundo plano
+  if (topStale(a)) {
+    const fetching = artistTop(a, req.user.id).catch((e) => console.error('[artist-top]', a.name, e.message));
+    if (!a.top_fetched_at) await fetching;
+  }
+  const ranked = await q(
+    `SELECT att.track_id AS id FROM artist_top_tracks att JOIN tracks t ON t.id = att.track_id AND t.status = 'active'
+      WHERE att.artist_id = $1 ORDER BY att.rank`,
     [id]
   );
+  // Completa com as do catálogo (envios próprios, importações) até 50
+  const top = ranked.length >= 50 ? ranked : ranked.concat(await q(
+    `SELECT t.id FROM tracks t JOIN track_artists ta ON ta.track_id = t.id AND ta.artist_id = $1 AND ta.role IN ('main','featured')
+      WHERE t.status = 'active' AND NOT (t.id = ANY($2::uuid[])) GROUP BY t.id ORDER BY max(t.popularity) DESC, max(t.created_at) DESC LIMIT $3`,
+    [id, ids(ranked), 50 - ranked.length]
+  ));
   const albums = await albumCards(`EXISTS (SELECT 1 FROM album_artists aa WHERE aa.album_id = al.id AND aa.artist_id = $1)`, [id], 50);
   const appearsOn = await albumCards(
     `NOT EXISTS (SELECT 1 FROM album_artists aa WHERE aa.album_id = al.id AND aa.artist_id = $1)

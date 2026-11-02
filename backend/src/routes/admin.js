@@ -310,7 +310,7 @@ adminRouter.post('/admin/youtube/lookup', ah2(async (req, res) => {
 }));
 
 // ---------------- Catálogo: faixas ----------------
-async function findOrCreateArtist(db, name) {
+export async function findOrCreateArtist(db, name) {
   const n = str(name, 'Artista', { required: true, max: 200 });
   const ex = await db.one(`SELECT id FROM artists WHERE f_norm(name) = f_norm($1) ORDER BY created_at LIMIT 1`, [n]);
   if (ex) return ex.id;
