@@ -1,7 +1,8 @@
 import { execFile } from 'child_process';
 import express from 'express';
+import { Readable } from 'stream';
 import { one, q } from '../db.js';
-import { adminOnly, audit, auth } from '../security.js';
+import { adminOnly, audit, auth, verifyStream } from '../security.js';
 import { getSettings } from '../seed.js';
 import { ah, bad, forbidden, int, notFound, str, uuidList, uuidParam } from '../util.js';
 import { hydrateTracks } from '../views.js';
@@ -249,6 +250,82 @@ async function youtubeOn() {
 }
 
 export const youtubeRouter = express.Router();
+
+// ----- Áudio direto do YouTube (app nativo) -----
+// O app não toca o player incorporado: o servidor descobre a URL do áudio com o yt-dlp e repassa os bytes (com Range,
+// para avançar). Toca em poucos segundos, sem esperar a conversão para MP3, que segue na fila para as próximas vezes.
+// A URL do googlevideo vale só para o IP que a pediu, por isso o servidor repassa em vez de entregar a URL ao app.
+const direct = new Map(); // youtube_id -> { at, promise: { url, mime } }
+const DIRECT_MS = 2 * 3600 * 1000;
+
+function directAudio(vid, force = false) {
+  const hit = direct.get(vid);
+  if (!force && hit && Date.now() - hit.at < DIRECT_MS) return hit.promise;
+  const promise = new Promise((resolve, reject) => {
+    execFile(
+      YTDLP,
+      ['-f', 'bestaudio[ext=m4a]/bestaudio', '--no-playlist', '--no-warnings', '--print', 'ext', '--print', 'url', ...YTDLP_JS, `https://www.youtube.com/watch?v=${vid}`],
+      { timeout: 60000, windowsHide: true },
+      (err, stdout) => {
+        const [ext, url] = String(stdout || '').trim().split('\n');
+        if (err || !url?.startsWith('http')) return reject(bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED'));
+        resolve({ url, mime: ext === 'webm' ? 'audio/webm' : 'audio/mp4' });
+      }
+    );
+  });
+  direct.set(vid, { at: Date.now(), promise });
+  promise.catch(() => direct.delete(vid));
+  while (direct.size > 500) direct.delete(direct.keys().next().value);
+  return promise;
+}
+
+/** Converte para MP3 sem pressa (pista normal), se ainda não houver conversão pedida para a faixa. */
+async function queueConversion(t, userId) {
+  const pending = await one(`SELECT 1 FROM import_jobs WHERE track_id = $1 AND status IN ('queued','running')`, [t.id]);
+  if (!pending) await enqueueJob({ kind: 'youtube', url: `https://www.youtube.com/watch?v=${t.youtube_id}`, trackId: t.id, userId });
+}
+
+/** URL assinada (como /stream/:id), porque o player do app não manda o cabeçalho de login. Vem de POST /playback/session. */
+youtubeRouter.get('/youtube/stream/:id', ah(async (req, res) => {
+  const id = uuidParam(req.params.id);
+  if (!verifyStream(id, req.query)) return res.status(403).json({ error: { code: 'URL_EXPIRED', message: 'Link de reprodução expirado' } });
+  const t = await one(
+    `SELECT t.id, t.youtube_id, t.source FROM tracks t JOIN users u ON u.id = $2 AND u.status = 'active' AND u.deleted_at IS NULL
+      WHERE t.id = $1 AND t.status = 'active'`,
+    [id, req.query.u]
+  );
+  if (!t?.youtube_id) throw notFound('Faixa não encontrada', 'TRACK_NOT_FOUND');
+  // Só no começo da música (o player faz vários pedidos com Range ao avançar)
+  const fromStart = !req.headers.range || /^bytes=0-/.test(req.headers.range);
+  if (t.source === 'youtube' && fromStart) queueConversion(t, req.query.u).catch(() => {});
+  const ac = new AbortController();
+  res.on('close', () => ac.abort());
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const a = await directAudio(t.youtube_id, attempt > 0);
+    const up = await fetch(a.url, { headers: req.headers.range ? { Range: req.headers.range } : {}, signal: ac.signal }).catch(() => null);
+    // URL vencida ou recusada: pede outra ao yt-dlp uma vez
+    if (!up || up.status === 403 || up.status === 410) {
+      await up?.body?.cancel().catch(() => {});
+      if (attempt === 0) continue;
+      throw bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED');
+    }
+    if (up.status === 416) {
+      res.status(416).set('Content-Range', up.headers.get('content-range') || '').end();
+      return;
+    }
+    if (!up.ok) throw bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED');
+    res.status(up.status).set({ 'Content-Type': a.mime, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' });
+    for (const h of ['content-length', 'content-range']) {
+      const v = up.headers.get(h);
+      if (v) res.set(h, v);
+    }
+    const body = Readable.fromWeb(up.body);
+    body.on('error', () => res.destroy());
+    body.pipe(res);
+    return;
+  }
+}));
+
 youtubeRouter.use('/youtube', auth());
 
 youtubeRouter.get('/youtube/search', ah(async (req, res) => {

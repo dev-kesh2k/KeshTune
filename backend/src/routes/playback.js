@@ -16,10 +16,14 @@ playbackRouter.post('/playback/session', auth(), ah(async (req, res) => {
   if (!t) throw notFound('Faixa não encontrada', 'TRACK_NOT_FOUND');
   if (t.status !== 'active') throw bad('Faixa retirada do catálogo', 'TRACK_UNAVAILABLE');
   if (t.explicit && req.user.explicit_allowed === false) throw bad('Conteúdo explícito bloqueado nas suas configurações', 'EXPLICIT_BLOCKED');
-  if (t.source === 'youtube') {
-    return res.json({ session_id: `ps_${Date.now().toString(36)}`, source: 'youtube', video_id: t.youtube_id, ads_before: false });
-  }
   const s = signStream(id, req.user.id, 3600);
+  if (t.source === 'youtube') {
+    // O web toca pelo player incorporado (video_id); o app nativo toca a url, que o servidor repassa do YouTube
+    return res.json({
+      session_id: `ps_${Date.now().toString(36)}`, source: 'youtube', video_id: t.youtube_id, ads_before: false,
+      url: `youtube/stream/${id}?u=${s.u}&exp=${s.exp}&sig=${s.sig}`, expires_at: new Date(s.exp * 1000).toISOString(),
+    });
+  }
   res.json({
     session_id: `ps_${Date.now().toString(36)}`,
     source: 'file',
