@@ -337,7 +337,9 @@ youtubeRouter.get('/youtube/stream/:id', ah(async (req, res) => {
     ac = new AbortController();
     // Só a espera pelos cabeçalhos tem limite (internet instável); o corpo segue enquanto o player ler
     const t0 = setTimeout(() => ac.abort('timeout'), 10000);
-    const up = await fetch(a.url, { headers: req.headers.range ? { Range: req.headers.range } : {}, signal: ac.signal }).catch(() => null);
+    const asked = parseRange(req.headers.range);
+    const range = asked ? chunkRange(asked.start, asked.end) : req.headers.range;
+    const up = await fetch(a.url, { headers: range ? { Range: range } : {}, signal: ac.signal }).catch(() => null);
     clearTimeout(t0);
     if (closed) return;
     // Falha de rede ou demora até o googlevideo (passageiras): tenta mais uma vez com a mesma URL, que não foi recusada
@@ -364,6 +366,18 @@ youtubeRouter.get('/youtube/stream/:id', ah(async (req, res) => {
     }
     if (!up.ok) throw bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED');
     res.status(up.status).set({ 'Content-Type': a.mime, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' });
+    const want = parseRange(req.headers.range);
+    const total = Number(/\/(\d+)$/.exec(up.headers.get('content-range') || '')?.[1]) || 0;
+    if (up.status === 206 && want && total) {
+      // O googlevideo segura a velocidade de pedidos longos vindos de servidor: o primeiro pedaço já veio (até CHUNK);
+      // o resto vai em pedaços, como o yt-dlp faz. Para o app continua sendo uma resposta só.
+      const end = Math.min(want.end ?? total - 1, total - 1);
+      if (req.headers.range) res.set('Content-Range', `bytes ${want.start}-${end}/${total}`);
+      else res.status(200);
+      res.set('Content-Length', String(end - want.start + 1));
+      await sendChunks(a.url, up, want.start, end, res, () => closed);
+      return;
+    }
     for (const h of ['content-length', 'content-range']) {
       const v = up.headers.get(h);
       if (v) res.set(h, v);
@@ -374,6 +388,61 @@ youtubeRouter.get('/youtube/stream/:id', ah(async (req, res) => {
     return;
   }
 }));
+
+const CHUNK = 2 * 1024 * 1024;
+
+/** "bytes=início-[fim]" (ou nada = do começo). O formato "bytes=-N" (últimos N) não é dividido em pedaços. */
+function parseRange(h) {
+  if (!h) return { start: 0, end: null };
+  const m = /^bytes=(\d+)-(\d*)$/.exec(h);
+  return m ? { start: Number(m[1]), end: m[2] ? Number(m[2]) : null } : null;
+}
+
+/** Faixa pedida ao googlevideo, limitada a um pedaço a partir de "start" (o fim pedido pelo app vale se for antes). */
+const chunkRange = (start, end) => (end != null ? `bytes=${start}-${Math.min(end, start + CHUNK - 1)}` : `bytes=${start}-${start + CHUNK - 1}`);
+
+/** Espera o app ler o que já foi enviado (ou desistir da conexão). */
+function drained(res) {
+  return new Promise((resolve) => {
+    const done = () => {
+      res.off('drain', done);
+      res.off('close', done);
+      resolve();
+    };
+    res.on('drain', done);
+    res.on('close', done);
+  });
+}
+
+/** Escreve o primeiro pedaço (já pedido) e busca os seguintes em sequência, respeitando o ritmo de leitura do app. */
+async function sendChunks(url, first, start, end, res, isClosed) {
+  let pos = start;
+  let up = first;
+  let ac = null;
+  const onClose = () => ac?.abort();
+  res.once('close', onClose);
+  try {
+    for (;;) {
+      for await (const buf of Readable.fromWeb(up.body)) {
+        if (isClosed()) return;
+        pos += buf.length;
+        if (!res.write(buf)) await drained(res);
+      }
+      if (pos > end || isClosed()) break;
+      // Prazo só até os cabeçalhos: o corpo pode ficar parado enquanto o buffer do player estiver cheio
+      ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 20000);
+      up = await fetch(url, { headers: { Range: chunkRange(pos, end) }, signal: ac.signal }).finally(() => clearTimeout(timer));
+      if (up.status !== 206) throw new Error(`googlevideo ${up.status}`);
+    }
+    res.end();
+  } catch {
+    // Pedaço que falhou no meio: fecha a conexão; o player pede de novo a partir de onde parou
+    res.destroy();
+  } finally {
+    res.off('close', onClose);
+  }
+}
 
 youtubeRouter.use('/youtube', auth());
 
