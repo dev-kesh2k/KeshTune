@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.centralappshub.keshtune.data.AlbumCard
 import br.com.centralappshub.keshtune.data.ArtistCard
+import br.com.centralappshub.keshtune.data.MixCard
 import br.com.centralappshub.keshtune.data.PlaylistCard
 import br.com.centralappshub.keshtune.data.Track
 import br.com.centralappshub.keshtune.data.mediaUrl
@@ -363,6 +364,9 @@ fun AlbumCardView(a: AlbumCard, onClick: () -> Unit) = Card(a.coverUrl, a.title,
 
 @Composable
 fun PlaylistCardView(p: PlaylistCard, onClick: () -> Unit) = Card(p.image, p.name, p.ownerName, onClick = onClick)
+
+@Composable
+fun MixCardView(m: MixCard, onClick: () -> Unit) = Card(m.imageUrl, m.title, m.subtitle, onClick = onClick)
 
 @Composable
 fun ArtistCardView(a: ArtistCard, onClick: () -> Unit) = Card(a.imageUrl, a.name, "Artista", round = true, onClick = onClick)

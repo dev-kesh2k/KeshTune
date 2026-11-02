@@ -726,3 +726,175 @@ youtubeRouter.get('/youtube/jobs', ah(async (req, res) => {
   const done = new Map((await hydrateTracks(rows.filter((r) => r.status === 'done').map((r) => r.track_id), req.user)).map((t) => [t.id, t]));
   res.json({ items: rows.map((r) => ({ ...r, track: done.get(r.track_id) || null })) });
 }));
+
+// ---------------- Mixes: playlists do YouTube Music e mixes automáticos ----------------
+// Playlists oficiais do YouTube Music (canal "YouTube Music", id RDCLAK5uy_…) achadas pela busca do music.youtube.com
+// (seção "featured playlists"), por categoria; e mixes "Mix de X" (RD + id do vídeo), que o YouTube gera a partir de
+// uma música: um para cada artista que o usuário mais ouve e para cada artista em alta no Brasil.
+
+const YTM_SHELVES = [
+  ['Em alta', ['mais tocadas', 'hits do momento', 'top brasil']],
+  ['Lançamentos', ['lançamentos', 'novidades da semana']],
+  ['Sertanejo', ['sertanejo', 'sertanejo hits', 'sertanejo romântico']],
+  ['Funk', ['funk', 'funk hits', 'baile funk']],
+  ['Pagode e Samba', ['pagode', 'samba', 'pagode hits']],
+  ['Brega e Arrocha', ['brega', 'arrocha', 'seresta']],
+  ['Rap e Trap', ['rap nacional', 'trap brasil']],
+  ['Pop', ['pop nacional', 'pop hits']],
+  ['Forró e Piseiro', ['forró', 'piseiro']],
+  ['Gospel', ['gospel', 'louvor']],
+  ['Rock', ['rock nacional', 'rock clássico']],
+  ['MPB', ['mpb', 'bossa nova']],
+  ['Eletrônica', ['eletrônica', 'dance hits']],
+  ['Internacional', ['hits internacionais', 'pop internacional']],
+];
+const PER_SHELF = 8;
+const MIX_TTL = 6 * 3600 * 1000;
+const SHELF_TTL = 24 * 3600 * 1000;
+const mixCache = new Map(); // id -> { at, value: { title, description, image_url, tracks: [ids] } }
+const listMeta = new Map(); // id da playlist -> { id, title, subtitle, image_url }
+let shelves = { at: 0, items: [] };
+let shelvesBusy = null;
+
+const isYtmList = (id) => /^RDCLAK5uy_[\w-]{20,}$/.test(id);
+const isMix = (id) => /^RD[\w-]{11}$/.test(id);
+const mixCard = (vid, title, subtitle) => ({ id: `RD${vid}`, title, subtitle, image_url: thumb(vid) });
+const listUrl = (id) => (isMix(id) ? `https://www.youtube.com/watch?v=${id.slice(2)}&list=${id}` : `https://www.youtube.com/playlist?list=${id}`);
+const bestThumb = (j) => {
+  const u = (j.thumbnails || []).slice(-1)[0]?.url || null;
+  return u && /^https:\/\/i\d*\.ytimg\.com\//.test(u) ? u : null;
+};
+
+/** Título e capa de uma playlist do YouTube Music (lê só o cabeçalho). */
+async function playlistMeta(id) {
+  const hit = listMeta.get(id);
+  if (hit) return hit;
+  const j = await ytdlpJson(listUrl(id), ['--playlist-end', '1']);
+  const meta = { id, title: j.title || 'Playlist', subtitle: (j.description || 'YouTube Music').split(/[.\n]/)[0].slice(0, 90), image_url: bestThumb(j) };
+  listMeta.set(id, meta);
+  while (listMeta.size > 1000) listMeta.delete(listMeta.keys().next().value);
+  return meta;
+}
+
+/** Ids das playlists oficiais do YouTube Music para uma busca. */
+async function ytmPlaylistIds(query) {
+  const j = await ytdlpJson(`https://music.youtube.com/search?q=${encodeURIComponent(query)}#featured playlists`, ['--playlist-end', '30']);
+  return [...new Set((j.entries || []).map((e) => String(e.id || '').replace(/^VL/, '')).filter(isYtmList))];
+}
+
+/** Prateleiras do YouTube Music (guardadas por 1 dia; vencidas, saem as antigas e atualiza em segundo plano). */
+function ytmShelves() {
+  if (shelves.items.length && Date.now() - shelves.at < SHELF_TTL) return Promise.resolve(shelves.items);
+  shelvesBusy ??= (async () => {
+    if (!(await detect('youtube')).available) return shelves.items;
+    const out = new Array(YTM_SHELVES.length).fill(null);
+    // 3 categorias por vez: rápido o bastante sem ocupar o yt-dlp do servidor inteiro
+    for (let i = 0; i < YTM_SHELVES.length; i += 3) {
+      await Promise.all(YTM_SHELVES.slice(i, i + 3).map(async ([title, queries], k) => {
+        try {
+          const ids = [...new Set((await Promise.all(queries.map((qq) => ytmPlaylistIds(qq).catch(() => [])))).flat())].slice(0, PER_SHELF);
+          const items = [];
+          for (const id of ids) {
+            const m = await playlistMeta(id).catch(() => null);
+            if (m) items.push(m);
+          }
+          out[i + k] = { title, items };
+        } catch (e) { console.error('[mixes] YouTube Music', title, e.message); }
+      }));
+    }
+    // A mesma playlist em duas categorias fica só na primeira
+    const seen = new Set();
+    const items = out.filter(Boolean)
+      .map((sh) => ({ title: sh.title, items: sh.items.filter((m) => !seen.has(m.id) && seen.add(m.id)) }))
+      .filter((sh) => sh.items.length);
+    if (items.length) shelves = { at: Date.now(), items };
+    return shelves.items;
+  })().finally(() => { shelvesBusy = null; });
+  return shelves.items.length ? Promise.resolve(shelves.items) : shelvesBusy;
+}
+
+/** Já monta as prateleiras pouco depois de o servidor subir, para a primeira abertura da aba não esperar. */
+export function startMixesWarmup() {
+  setTimeout(() => ytmShelves().catch((e) => console.error('[mixes]', e.message)), 60000).unref();
+  setInterval(() => ytmShelves().catch(() => {}), 6 * 3600 * 1000).unref();
+}
+
+/** Seus mixes: um por artista que o usuário mais ouviu (90 dias), a partir da música dele que mais tocou. */
+async function userMixes(userId) {
+  const rows = await q(
+    `SELECT DISTINCT ON (x.artist_id) x.artist_id, a.name, t.youtube_id, t.title, x.n FROM (
+       SELECT ta.artist_id, h.track_id, count(*) AS n FROM play_history h
+         JOIN track_artists ta ON ta.track_id = h.track_id AND ta.role = 'main'
+        WHERE h.user_id = $1 AND h.played_at > now() - interval '90 days' GROUP BY 1, 2) x
+       JOIN tracks t ON t.id = x.track_id AND t.youtube_id IS NOT NULL
+       JOIN artists a ON a.id = x.artist_id
+      ORDER BY x.artist_id, x.n DESC`,
+    [userId]
+  );
+  return rows.sort((a, b) => b.n - a.n).slice(0, 10).map((r) => mixCard(r.youtube_id, `Mix de ${r.name}`, `${r.title} e mais`));
+}
+
+/** Um mix para cada artista em alta no Brasil, a partir da música mais vista dele. */
+async function trendingMixes(userId) {
+  const ids = await trendingArtistsBR(userId).catch(() => []);
+  if (!ids.length) return [];
+  const rows = await q(
+    `SELECT a.id, a.name, t.youtube_id, t.title FROM artists a
+       JOIN artist_top_tracks att ON att.artist_id = a.id AND att.rank = 0
+       JOIN tracks t ON t.id = att.track_id AND t.youtube_id IS NOT NULL
+      WHERE a.id = ANY($1::uuid[])`,
+    [ids]
+  );
+  const by = new Map(rows.map((r) => [r.id, r]));
+  return ids.map((id) => by.get(id)).filter(Boolean).map((r) => mixCard(r.youtube_id, `Mix de ${r.name}`, `${r.title} e mais`));
+}
+
+youtubeRouter.get('/youtube/mixes', ah(async (req, res) => {
+  await youtubeOn();
+  const [ytm, mine, trending] = await Promise.all([
+    // Primeira montagem das prateleiras (servidor recém-ligado) pode levar mais: responde sem elas e o app pede de novo
+    Promise.race([ytmShelves(), new Promise((r) => setTimeout(r, 12000, null))]).catch((e) => { console.error('[mixes] YouTube Music', e.message); return []; }),
+    userMixes(req.user.id).catch((e) => { console.error('[mixes] seus', e.message); return []; }),
+    trendingMixes(req.user.id).catch((e) => { console.error('[mixes] em alta', e.message); return []; }),
+  ]);
+  const [first, ...rest] = ytm || [];
+  res.json({
+    pending: ytm === null,
+    sections: [
+      ...(first ? [first] : []),
+      { title: 'Seus mixes', items: mine },
+      { title: 'Mixes dos artistas em alta', items: trending },
+      ...rest,
+    ].filter((s) => s.items.length),
+  });
+}));
+
+/** Faixas de um mix ou de uma playlist do YouTube Music (cadastradas como YouTube; tocam pelo repasse do servidor). */
+youtubeRouter.get('/youtube/mixes/:id', ah(async (req, res) => {
+  await youtubeOn();
+  const id = String(req.params.id);
+  if (!isMix(id) && !isYtmList(id)) throw bad('Mix inválido');
+  let hit = mixCache.get(id);
+  if (!hit || Date.now() - hit.at > MIX_TTL) {
+    const j = await ytdlpJson(listUrl(id), ['--playlist-end', '100']).catch((e) => {
+      console.error('[mixes]', id, e.message);
+      throw bad('Não foi possível abrir agora', 'YOUTUBE_UNAVAILABLE');
+    });
+    const videos = videoEntries(j.entries).filter((v) => !NOT_A_SONG.test(v.title) && (!v.duration_ms || v.duration_ms <= 900000));
+    const ids = [...new Set((await ensureTracks(videos, req.user.id, null, { convert: false })).map((r) => r.id).filter(Boolean))];
+    const meta = listMeta.get(id);
+    hit = {
+      at: Date.now(),
+      value: {
+        title: j.title || meta?.title || 'Mix',
+        description: isMix(id) ? 'Mix do YouTube' : String(j.description || '').split('\n')[0].slice(0, 200),
+        image_url: (isMix(id) ? thumb(id.slice(2)) : bestThumb(j)) || meta?.image_url || null,
+        tracks: ids,
+      },
+    };
+    mixCache.set(id, hit);
+    while (mixCache.size > 300) mixCache.delete(mixCache.keys().next().value);
+  }
+  const { tracks, ...info } = hit.value;
+  res.json({ id, ...info, tracks: await hydrateTracks(tracks, req.user) });
+}));
