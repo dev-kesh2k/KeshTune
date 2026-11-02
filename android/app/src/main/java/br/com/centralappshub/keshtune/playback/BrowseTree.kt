@@ -49,11 +49,15 @@ class BrowseTree(
             folder("home:mix", "Seu mix"),
             folder("home:top", "Em alta"),
             folder("home:fresh", "Novidades"),
+            folder(MIXES, "Mixes e YouTube Music"),
             folder(DOWNLOADS, "Baixadas (sem internet)"),
             folder(LIKED, "Músicas curtidas"),
             folder(PLAYLISTS, "Suas playlists"),
         )
         PLAYLISTS -> playlists().map { folder("pl:${it.id}", it.name, it.image) }
+        // Mixes do YouTube e playlists do YouTube Music (do arquivo guardado, se a rede demorar)
+        MIXES -> (withTimeoutOrNull(NET_WAIT_MS) { runCatching { repo.mixes() }.getOrNull() } ?: repo.cachedMixes())
+            ?.sections.orEmpty().flatMap { it.items }.distinctBy { it.id }.map { folder("mix:${it.id}", it.title, it.imageUrl) }
         else -> tracksOf(parentId).map { it.toMediaItem("$parentId/${it.id}") }
     }
 
@@ -84,6 +88,8 @@ class BrowseTree(
                     local
                 }
             }
+            parentId.startsWith("mix:") ->
+                withTimeoutOrNull(NET_WAIT_MS * 2) { runCatching { repo.mix(parentId.removePrefix("mix:")).tracks }.getOrNull() }.orEmpty()
             else -> emptyList()
         }.filter { it.playable }
         // Baixadas mudam pelo próprio app e vêm do banco local: sempre lidas na hora. Lista vazia não fica guardada
@@ -164,6 +170,7 @@ class BrowseTree(
         const val LIKED = "liked"
         const val DOWNLOADS = "downloads"
         const val PLAYLISTS = "playlists"
+        const val MIXES = "mixes"
 
         private const val LIST_TTL_MS = 5 * 60 * 1000L
         private const val SYNC_TTL_MS = 10 * 60 * 1000L
