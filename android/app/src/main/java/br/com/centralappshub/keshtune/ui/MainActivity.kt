@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -104,6 +105,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab("home", "Início", Icons.Default.Home),
+    Tab("mixes", "Mixes", Icons.AutoMirrored.Filled.QueueMusic),
     Tab("search", "Buscar", Icons.Default.Search),
     Tab("library", "Biblioteca", Icons.Default.LibraryMusic),
 )
@@ -146,6 +148,7 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
             playlist = { nav.navigate("playlist/$it") },
             liked = { nav.navigate("liked") },
             downloads = { nav.navigate("downloads") },
+            mix = { nav.navigate("mix/$it") },
         )
     }
     val selectTab = { r: String ->
@@ -228,6 +231,8 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
                     composable("album/{id}") { AlbumScreen(go, player, playingIdState.value) }
                     composable("artist/{id}") { ArtistScreen(go, player, playingIdState.value) }
                     composable("playlist/{id}") { PlaylistScreen(player, playingIdState.value) }
+                    composable("mixes") { MixesScreen(go) }
+                    composable("mix/{id}") { MixScreen(player, playingIdState.value) }
                     composable("player") { NowPlayingScreen(playerVm) { nav.popBackStack() } }
                 }
                 if (wide) miniPlayer()

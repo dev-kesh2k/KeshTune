@@ -403,7 +403,10 @@ class PlaybackService : MediaLibraryService() {
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) saveQueue()
         }
 
-        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = saveQueue()
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            preloadNext()
+            saveQueue()
+        }
 
         override fun onRepeatModeChanged(repeatMode: Int) = saveQueue()
 
@@ -512,22 +515,37 @@ class PlaybackService : MediaLibraryService() {
         }
 
         /** Adianta a próxima faixa: capa no cache em disco do Coil e URL do áudio já pedida ao servidor. */
+        /**
+         * Prepara as próximas faixas (na ordem real, com aleatório e repetir): o servidor já descobre o áudio do
+         * YouTube, que leva alguns segundos, e quem pula músicas seguidas não fica esperando.
+         */
         private fun preloadNext() {
-            val next = player.nextMediaItemIndex
-            if (next == C.INDEX_UNSET) return
-            val item = player.getMediaItemAt(next)
-            // A grande (notificação, player) e, do YouTube, a pequena do mini player e das listas
+            val timeline = player.currentTimeline
+            if (timeline.isEmpty) return
+            val next = ArrayList<Int>(PRELOAD_AHEAD)
+            // Repetir uma: quem aperta "próxima" vai para a seguinte da fila
+            val repeat = if (player.repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else player.repeatMode
+            var idx = player.currentMediaItemIndex
+            while (next.size < PRELOAD_AHEAD) {
+                idx = timeline.getNextWindowIndex(idx, repeat, player.shuffleModeEnabled)
+                if (idx == C.INDEX_UNSET || idx == player.currentMediaItemIndex || idx in next) break
+                next += idx
+            }
+            if (next.isEmpty()) return
+            // Capa só da próxima: a grande (notificação, player) e, do YouTube, a pequena do mini player e das listas
             val ctx = this@PlaybackService
-            coverUrlsToWarm(item.mediaMetadata.artworkUri?.toString()).forEach { url ->
+            coverUrlsToWarm(player.getMediaItemAt(next[0]).mediaMetadata.artworkUri?.toString()).forEach { url ->
                 SingletonImageLoader.get(ctx).enqueue(
                     ImageRequest.Builder(ctx).data(url).size(96).memoryCachePolicy(CachePolicy.DISABLED).build()
                 )
             }
-            resolver.prefetch(item.mediaId)
+            resolver.prefetch(next.map { player.getMediaItemAt(it).mediaId })
         }
     }
 
     private companion object {
+        /** Quantas faixas à frente o servidor já deixa prontas. */
+        const val PRELOAD_AHEAD = 3
         val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
         val NETWORK_ERROR_CODES = setOf(
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,

@@ -75,6 +75,7 @@ class Nav(
     val playlist: (String) -> Unit,
     val liked: () -> Unit,
     val downloads: () -> Unit,
+    val mix: (String) -> Unit,
 )
 
 // ---------------- Login ----------------
@@ -409,6 +410,61 @@ fun PlaylistScreen(player: PlayerConnection, playingId: String?, vm: PlaylistVie
                 onDownload = { downloads?.enqueue(tracks) },
             )
         })
+    }
+}
+
+// ---------------- Mixes ----------------
+
+@Composable
+fun MixesScreen(nav: Nav, vm: MixesViewModel = hiltViewModel()) {
+    when (val s = vm.state.collectAsStateWithLifecycle().value) {
+        Ui.Loading -> Loading()
+        is Ui.Error -> ErrorBox(s.message, vm::refresh)
+        is Ui.Ok -> LazyColumn(Modifier.fillMaxSize()) {
+            item {
+                Column(Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp)) {
+                    Text("Mixes", style = MaterialTheme.typography.headlineLarge)
+                    Text("Playlists do YouTube Music e mixes feitos para você", style = MaterialTheme.typography.bodyLarge, color = Kesh.muted)
+                }
+            }
+            s.data.sections.forEach { sec -> shelf(sec.title, sec.items) { MixCardView(it) { nav.mix(it.id) } } }
+            if (s.data.pending) {
+                item {
+                    Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Carregando as playlists do YouTube Music…", color = Kesh.muted)
+                    }
+                }
+            } else if (s.data.sections.isEmpty()) {
+                item { Text("Nenhum mix disponível agora.", color = Kesh.muted, modifier = Modifier.padding(20.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+fun MixScreen(player: PlayerConnection, playingId: String?, vm: MixViewModel = hiltViewModel()) {
+    val downloads = LocalDownloads.current
+    when (val s = vm.state.collectAsStateWithLifecycle().value) {
+        Ui.Loading -> Loading()
+        is Ui.Error -> ErrorBox(s.message, vm::refresh)
+        is Ui.Ok -> {
+            val m = s.data
+            val anyPlayable = remember(m.tracks) { m.tracks.any { it.playable } }
+            TrackListScreen(m.tracks, playingId, player, header = {
+                CollectionHeader(
+                    m.imageUrl ?: m.tracks.firstOrNull()?.coverUrl,
+                    if (m.id.startsWith("RDCLAK")) "Playlist do YouTube Music" else "Mix",
+                    m.title,
+                    listOfNotNull(m.description?.takeIf { it.isNotBlank() }, "${m.tracks.size} músicas").joinToString(" • "),
+                    enabled = anyPlayable,
+                    onPlay = { player.play(m.tracks) },
+                    onShuffle = { player.play(m.tracks, shuffle = true) },
+                    onDownload = { downloads?.enqueue(m.tracks) },
+                )
+            })
+        }
     }
 }
 
