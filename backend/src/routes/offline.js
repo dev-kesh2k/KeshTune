@@ -10,6 +10,7 @@ import { ah, bad, forbidden, notFound, str, uuidList, uuidParam, uuidv7 } from '
 import { hydrateTracks } from '../views.js';
 import { AUDIO_DIR } from './media.js';
 import { ingestEvents } from './playback.js';
+import { addToMyMusic } from './playlists.js';
 
 export const offlineRouter = express.Router();
 offlineRouter.use(['/devices', '/offline'], auth());
@@ -80,6 +81,7 @@ offlineRouter.post('/offline/licenses', ah(async (req, res) => {
   if (n + ok.length > s.max_offline_tracks) throw bad(`Limite de ${s.max_offline_tracks} faixas baixadas por conta`, 'OFFLINE_LIMIT');
   const days = s.offline_license_days;
   const out = [];
+  const fresh = []; // baixadas agora pela primeira vez neste aparelho (renovação não conta)
   for (const t of ok) {
     const file = await one(`SELECT audio_size, audio_mime, checksum FROM tracks WHERE id = $1`, [t.id]);
     let lic = await one(
@@ -96,6 +98,7 @@ offlineRouter.post('/offline/licenses', ah(async (req, res) => {
          VALUES ($1,$2,$3,$4, now() + ($5 || ' days')::interval, $6) RETURNING id, key_wrapped, expires_at`,
         [uuidv7(), deviceId, req.user.id, t.id, String(days), wrapKey(raw)]
       );
+      fresh.push(t.id);
     }
     out.push({
       license_id: lic.id,
@@ -109,6 +112,7 @@ offlineRouter.post('/offline/licenses', ah(async (req, res) => {
       track: t,
     });
   }
+  await addToMyMusic(req.user, fresh).catch((e) => console.error('[my_music]', e.message));
   res.json({ server_time: new Date().toISOString(), licenses: out, skipped });
 }));
 

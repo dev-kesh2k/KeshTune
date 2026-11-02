@@ -1,3 +1,4 @@
+import compression from 'compression';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from './db.js';
@@ -16,6 +17,8 @@ import { libraryRouter } from './routes/library.js';
 import { playbackRouter } from './routes/playback.js';
 import { offlineRouter } from './routes/offline.js';
 import { adminRouter } from './routes/admin.js';
+import { importsRouter, startImportWorker } from './routes/imports.js';
+import { startArtistImageWorker, youtubeRouter } from './routes/youtube.js';
 
 const app = express();
 app.set('trust proxy', process.env.TRUST_PROXY ? process.env.TRUST_PROXY.split(',') : 'loopback');
@@ -29,6 +32,11 @@ api.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   next();
 });
+// gzip nas respostas JSON; fica de fora o áudio (já comprimido) e o SSE (precisa sair na hora)
+api.use(compression({
+  threshold: 1024,
+  filter: (req, res) => !req.path.startsWith('/stream/') && !req.path.startsWith('/offline/download/') && req.path !== '/events' && compression.filter(req, res),
+}));
 api.use(express.json({ limit: '1mb' }));
 
 api.get('/health', ah(async (_req, res) => {
@@ -69,7 +77,7 @@ api.get('/events', (req, res, next) => {
   }
 });
 
-for (const r of [authRouter, meRouter, mediaRouter, catalogRouter, searchRouter, playlistsRouter, libraryRouter, playbackRouter, offlineRouter, adminRouter]) {
+for (const r of [authRouter, meRouter, mediaRouter, catalogRouter, searchRouter, playlistsRouter, libraryRouter, playbackRouter, offlineRouter, adminRouter, importsRouter, youtubeRouter]) {
   api.use(r);
 }
 
@@ -103,8 +111,7 @@ const publicPath = String(process.env.PUBLIC_PATH || '').replace(/\/+$/, '');
 if (publicPath) app.use(`${publicPath}/api`, api);
 app.use('/api', api);
 app.use('/v1', api);
-// Traefik remove /<slug>/api antes de repassar: as rotas chegam sem prefixo
-app.use('/', api);
+app.use(api); // proxy do Hub já tira /<slug>/api
 
 const port = Number(process.env.PORT) || 3000;
 (async () => {
@@ -120,7 +127,9 @@ const port = Number(process.env.PORT) || 3000;
   }
   await seed();
   await startRealtime();
-  app.listen(port, '0.0.0.0', () => console.log(`Spotify X API em 0.0.0.0:${port} (prefixo ${publicPath || '/'})`));
+  startImportWorker();
+  startArtistImageWorker();
+  app.listen(port, '0.0.0.0', () => console.log(`KeshTune API em 0.0.0.0:${port} (prefixo ${publicPath || '/'})`));
 })().catch((e) => {
   console.error('[boot] falha ao iniciar:', e);
   process.exit(1);
