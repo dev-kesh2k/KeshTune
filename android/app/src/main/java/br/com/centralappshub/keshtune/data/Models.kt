@@ -73,6 +73,9 @@ data class Home(
 )
 
 /** Playlist do YouTube Music (id RDCLAK5uy_…) ou mix automático do YouTube (RD + id do vídeo). */
+/** De onde veio um download em lote: id estável (ex.: "mix:RD…", "album:<id>"), nome, tipo e capa. */
+data class DownloadGroup(val id: String, val title: String, val kind: String, val image: String?)
+
 @Serializable
 data class MixCard(val id: String, val title: String, val subtitle: String? = null, val imageUrl: String? = null) {
     val isYoutubeMusic: Boolean get() = id.startsWith("RDCLAK")
