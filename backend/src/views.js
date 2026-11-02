@@ -55,11 +55,15 @@ export async function albumCards(whereSql, params, limit = 20) {
   );
 }
 
-/** Capa automática: as 4 primeiras capas distintas das faixas. */
+/**
+ * Capa automática: as 4 primeiras capas distintas das faixas. Olha só as 200 primeiras posições
+ * (janela fixa), para uma playlist enorme não custar a leitura de todas as faixas a cada card.
+ */
 export const MOSAIC_SQL = `(SELECT COALESCE(json_agg(x.cov ORDER BY x.mp), '[]') FROM (
    SELECT COALESCE(t.cover_url, al.cover_url) AS cov, min(pi.position) AS mp
-     FROM playlist_items pi JOIN tracks t ON t.id = pi.track_id LEFT JOIN albums al ON al.id = t.album_id
-    WHERE pi.playlist_id = p.id AND COALESCE(t.cover_url, al.cover_url) IS NOT NULL
+     FROM (SELECT track_id, position FROM playlist_items WHERE playlist_id = p.id ORDER BY position LIMIT 200) pi
+     JOIN tracks t ON t.id = pi.track_id LEFT JOIN albums al ON al.id = t.album_id
+    WHERE COALESCE(t.cover_url, al.cover_url) IS NOT NULL
     GROUP BY 1 ORDER BY 2 LIMIT 4) x)`;
 
 export async function playlistCards(whereSql, params, { limit = 50, order = 'p.updated_at DESC' } = {}) {

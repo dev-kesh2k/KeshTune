@@ -247,7 +247,7 @@ export async function probeAudio(file) {
   let cover_url = null;
   const pic = c.picture?.[0];
   if (pic?.data) {
-    try { cover_url = saveImage(Buffer.from(pic.data)); } catch { /* capa embutida em formato não suportado */ }
+    try { cover_url = await saveImage(Buffer.from(pic.data)); } catch { /* capa embutida em formato não suportado */ }
   }
   const lyrics = Array.isArray(c.lyrics) && c.lyrics.length
     ? c.lyrics.map((l) => (typeof l === 'string' ? l : l.text || (l.syncText || []).map((s) => s.text).join('\n'))).filter(Boolean).join('\n')
@@ -310,7 +310,7 @@ adminRouter.post('/admin/youtube/lookup', ah2(async (req, res) => {
 }));
 
 // ---------------- Catálogo: faixas ----------------
-async function findOrCreateArtist(db, name) {
+export async function findOrCreateArtist(db, name) {
   const n = str(name, 'Artista', { required: true, max: 200 });
   const ex = await db.one(`SELECT id FROM artists WHERE f_norm(name) = f_norm($1) ORDER BY created_at LIMIT 1`, [n]);
   if (ex) return ex.id;

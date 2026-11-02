@@ -1,0 +1,123 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlin.plugin.serialization'
+    id 'com.google.devtools.ksp'
+    id 'com.google.dagger.hilt.android'
+}
+
+// Assinatura do release: android/keystore.properties (fora do git), com storeFile, storePassword, keyAlias e keyPassword
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore.properties')
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
+
+android {
+    namespace 'br.com.centralappshub.keshtune'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'br.com.centralappshub.keshtune'
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    // prod: servidor de produção. dev: ambiente de testes (branch dev), instala lado a lado como "KeshTune Dev".
+    // A API fica em <APP_URL>api/.
+    flavorDimensions = ['server']
+    productFlavors {
+        prod {
+            dimension 'server'
+            resValue 'string', 'app_name', 'KeshTune'
+            buildConfigField 'String', 'APP_URL', '"https://central-apps-hub.com.br/keshtune/"'
+        }
+        dev {
+            dimension 'server'
+            applicationIdSuffix '.dev'
+            resValue 'string', 'app_name', 'KeshTune Dev'
+            buildConfigField 'String', 'APP_URL', '"https://central-apps-hub.com.br/keshtune-dev/"'
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+        compose true
+    }
+
+    signingConfigs {
+        if (keystoreFile.exists()) {
+            release {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        // R8 (full mode padrão do AGP) encolhe e otimiza o código, e shrinkResources tira os recursos sem uso:
+        // APK menor e app mais rápido na central fraca. Guardar o build/outputs/mapping/<variante>/mapping.txt
+        // de cada versão publicada, senão os stack traces do release não têm como ser lidos.
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+ksp {
+    arg('room.schemaLocation', "$projectDir/schemas")
+}
+
+dependencies {
+    def composeBom = platform('androidx.compose:compose-bom:2025.05.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.activity:activity-compose:1.10.1'
+    implementation 'androidx.core:core-ktx:1.16.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
+    implementation 'androidx.navigation:navigation-compose:2.8.9'
+    // Instala os perfis de compilação que vêm nas bibliotecas (Compose, Media3...) também em APK instalado
+    // por fora da Play Store: menos JIT na abertura e na rolagem
+    implementation 'androidx.profileinstaller:profileinstaller:1.4.1'
+
+    implementation 'androidx.media3:media3-exoplayer:1.9.0'
+    implementation 'androidx.media3:media3-session:1.9.0'
+    implementation 'androidx.media3:media3-datasource-okhttp:1.9.0'
+    // StandaloneDatabaseProvider do SimpleCache (cache de áudio em disco)
+    implementation 'androidx.media3:media3-database:1.9.0'
+
+    implementation 'androidx.room:room-runtime:2.7.1'
+    implementation 'androidx.room:room-ktx:2.7.1'
+    ksp 'androidx.room:room-compiler:2.7.1'
+
+    implementation 'com.google.dagger:hilt-android:2.56.2'
+    ksp 'com.google.dagger:hilt-compiler:2.56.2'
+    implementation 'androidx.hilt:hilt-navigation-compose:1.2.0'
+
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.10.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1'
+    implementation 'com.squareup.retrofit2:retrofit:2.11.0'
+    implementation 'com.squareup.retrofit2:converter-kotlinx-serialization:2.11.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    implementation 'io.coil-kt.coil3:coil-compose:3.1.0'
+    implementation 'io.coil-kt.coil3:coil-network-okhttp:3.1.0'
+}

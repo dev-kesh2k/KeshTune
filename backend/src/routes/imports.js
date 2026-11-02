@@ -118,11 +118,14 @@ async function attachAudio(job, file) {
   }
 }
 
+// YouTube: prefere o m4a (AAC), que o -x --audio-format m4a só copia (remux, sem ffmpeg pesado nem perda). No caso
+// raro sem m4a (só Opus), recodifica para AAC: Ogg/Opus não toca no Safari (iOS antes do 17) nem no download do site.
+// Faixas que já viraram 'file' (MP3) ficam como estão: o cache de áudio do app usa a chave /api/stream/<id>.
 const jobArgs = (job, dir) => (job.kind === 'youtube'
-  ? ['-x', '--audio-format', 'mp3', '--audio-quality', '0', '--no-playlist', '--newline', '-o', path.join(dir, '%(id)s.%(ext)s'), ...TOOLS.youtube.extra, job.url]
+  ? ['-f', 'bestaudio[ext=m4a]/bestaudio', '-x', '--audio-format', 'm4a', '--no-playlist', '--newline', '-o', path.join(dir, '%(id)s.%(ext)s'), ...TOOLS.youtube.extra, job.url]
   : ['download', job.url, '--output', path.join(dir, '{artists} - {title}.{output-ext}'), '--format', 'mp3', '--simple-tui', '--print-errors', ...TOOLS.spotify.extra]);
 
-let current = null; // { id, child } do job rodando nesta réplica
+const running = new Map(); // job id -> processo filho, dos jobs rodando nesta réplica
 
 async function runJob(job) {
   const tool = TOOLS[job.kind];
@@ -145,12 +148,12 @@ async function runJob(job) {
     if (r?.status === 'canceled') canceled = true;
   };
   const heartbeat = setInterval(() => {
-    save().then(() => { if (canceled) current?.child?.kill(); }).catch((e) => console.error('[import]', e.message));
+    save().then(() => { if (canceled) running.get(job.id)?.kill(); }).catch((e) => console.error('[import]', e.message));
   }, 5000);
   try {
     const code = await new Promise((resolve) => {
       const child = spawn(tool.bin, jobArgs(job, dir), { cwd: dir, windowsHide: true, env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' } });
-      current = { id: job.id, child };
+      running.set(job.id, child);
       const add = (d) => { log = (log + stripAnsi(d.toString('utf8'))).slice(-LOG_MAX); };
       child.stdout.on('data', add);
       child.stderr.on('data', add);
@@ -172,16 +175,24 @@ async function runJob(job) {
     await save({ status: canceled ? null : error ? 'failed' : 'done', error });
   } finally {
     clearInterval(heartbeat);
-    current = null;
+    running.delete(job.id);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-let busy = false;
+// Duas pistas: a normal pega qualquer job pela ordem; a expressa só pega faixa do YouTube urgente
+// (alguém esperando para ouvir), para ela não ficar atrás de uma importação longa que já está rodando.
+const URGENT_SQL = `kind = 'youtube' AND created_at < now() - interval '50 years'`;
+const lanes = { normal: { busy: false, where: 'true' }, urgent: { busy: false, where: URGENT_SQL } };
+
 /** Pega o próximo job da fila (seguro com várias réplicas: FOR UPDATE SKIP LOCKED). */
 async function tick() {
-  if (busy) return;
-  busy = true;
+  await Promise.all([runLane(lanes.normal), runLane(lanes.urgent)]);
+}
+
+async function runLane(lane) {
+  if (lane.busy) return;
+  lane.busy = true;
   try {
     // Job sem sinal de vida há 2 min: a réplica que rodava caiu
     await q(`UPDATE import_jobs SET status = 'failed', error = 'Interrompido (o servidor reiniciou durante a importação)', finished_at = now()
@@ -189,7 +200,7 @@ async function tick() {
     for (;;) {
       const job = await one(
         `UPDATE import_jobs SET status = 'running', started_at = now(), updated_at = now()
-          WHERE id = (SELECT id FROM import_jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`
+          WHERE id = (SELECT id FROM import_jobs WHERE status = 'queued' AND ${lane.where} ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`
       );
       if (!job) break;
       try {
@@ -202,7 +213,7 @@ async function tick() {
   } catch (e) {
     console.error('[import]', e.message);
   } finally {
-    busy = false;
+    lane.busy = false;
   }
 }
 
@@ -259,7 +270,7 @@ importsRouter.post('/admin/imports/:id/cancel', ah(async (req, res) => {
   const r = await q(`UPDATE import_jobs SET status = 'canceled', finished_at = CASE WHEN status = 'queued' THEN now() END
                       WHERE id = $1 AND status IN ('queued','running') RETURNING id`, [id]);
   if (!r.length) throw bad('A importação já terminou');
-  if (current?.id === id) current.child?.kill();
+  running.get(id)?.kill();
   await audit(req, 'admin.import_cancel', 'import', id);
   res.json({ ok: true });
 }));

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { BadgeCheck, Radio, Share2, UserRound } from 'lucide-react';
 import { api, errText } from '../lib/api';
@@ -17,6 +17,7 @@ type Artist = {
   id: string; name: string; bio: string | null; image_url: string | null; verified: boolean; country: string | null;
   followed: boolean; followers: number; monthly_listeners: number;
   top_tracks: Track[]; albums: AlbumCard[]; appears_on: AlbumCard[]; playlists: PlaylistCard[];
+  top_pending?: boolean;
 };
 
 export default function Artist() {
@@ -26,6 +27,19 @@ export default function Artist() {
   const ui = useUi();
   const toast = useToast();
   const [showAll, setShowAll] = useState(false);
+  // Primeira abertura do artista: o servidor ainda busca as 50 mais tocadas (top_pending) e respondeu só com as do
+  // catálogo. Recarrega em silêncio, até 3 vezes
+  const [polls, setPolls] = useState(0);
+  useEffect(() => setPolls(0), [id]);
+  const pending = !!data?.top_pending;
+  useEffect(() => {
+    if (!pending || polls >= 3) return;
+    const t = setTimeout(() => {
+      setPolls((n) => n + 1);
+      reload(true);
+    }, 6000);
+    return () => clearTimeout(t);
+  }, [pending, polls, reload]);
   if (loading) return <PageLoading />;
   if (error || !data) return <ErrorBox text={error || 'Artista não encontrado'} offline={offline} onRetry={() => reload()} />;
   const ctx = { type: 'artist' as const, id: data.id, name: data.name };

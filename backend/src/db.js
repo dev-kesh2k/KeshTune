@@ -11,8 +11,12 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  max: Number(process.env.DB_POOL_MAX) || 4,
+  // 8 conexões dão folga às rotas que disparam várias consultas em paralelo (busca, início); se o Postgres
+  // do Hub for apertado, ajuste por ambiente com DB_POOL_MAX. Sem o timeout, um pool esgotado deixaria a
+  // requisição esperando para sempre; com ele, falha em 10 s e o app tenta de novo.
+  max: Number(process.env.DB_POOL_MAX) || 8,
   idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
   // Limites da busca com tolerância a erros (operadores <% e % do pg_trgm, que usam o índice; ver routes/search.js)
   options: '-c pg_trgm.word_similarity_threshold=0.45 -c pg_trgm.similarity_threshold=0.3',
 });

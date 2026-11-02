@@ -3,6 +3,14 @@ import { one, q } from '../db.js';
 import { auth } from '../security.js';
 import { ah, int, notFound, oneOf, uuidParam } from '../util.js';
 import { albumCards, ARTIST_JSON, hydrateTracks, playlistCards } from '../views.js';
+import { artistTop, topStale, trendingArtistsBR } from './youtube.js';
+
+/** Cartões de artista na ordem dos ids. */
+async function artistCards(idList) {
+  const rows = await q(`SELECT id, name, image_url FROM artists WHERE id = ANY($1::uuid[])`, [idList]);
+  const map = new Map(rows.map((r) => [r.id, r]));
+  return idList.map((x) => map.get(x)).filter(Boolean);
+}
 
 export const catalogRouter = express.Router();
 catalogRouter.use(['/browse', '/tracks', '/albums', '/artists', '/genres', '/radio', '/me/recommendations'], auth());
@@ -34,38 +42,81 @@ async function mixFor(user, limit = 30) {
   return hydrateTracks(ids(rows), user);
 }
 
+// ----- Início -----
+// A parte que é igual para todos (mais tocadas, novidades, lançamentos, playlists públicas) é montada uma vez a cada
+// 3 min e reaproveitada; cada pedido só consulta o que é do usuário. Várias centrais abrindo o Início ao mesmo tempo
+// esperam a mesma montagem.
+const HOME_MS = 3 * 60 * 1000;
+let home = { at: 0, data: null };
+let homeBusy = null;
+
+/** { topIds, newIds, catalogSize, releases, pubs } com cache de 3 min. */
+function globalHome() {
+  if (home.data && Date.now() - home.at < HOME_MS) return Promise.resolve(home.data);
+  homeBusy ??= (async () => {
+    const [topPlayed, newTracks, { n: catalogSize }, releases, pubs] = await Promise.all([
+      q(
+        `SELECT pc.track_id AS id FROM play_counts pc JOIN tracks t ON t.id = pc.track_id AND t.status = 'active'
+          WHERE pc.day > current_date - 30 GROUP BY pc.track_id ORDER BY sum(pc.plays) DESC LIMIT 12`
+      ),
+      q(`SELECT id FROM tracks WHERE status = 'active' ORDER BY created_at DESC LIMIT 12`),
+      one(`SELECT count(*)::int AS n FROM tracks WHERE status = 'active'`),
+      albumCards('true', [], 12),
+      // 24 para sobrar depois de tirar as do próprio usuário
+      playlistCards(
+        `p.visibility = 'public' AND NOT p.hidden_by_admin`, [],
+        { limit: 24, order: `(SELECT count(*) FROM library_items li WHERE li.item_type = 'playlist' AND li.item_id = p.id) DESC, p.updated_at DESC` }
+      ),
+    ]);
+    // Poucas reproduções no mês: completa com as mais populares
+    const topRows = topPlayed.length >= 12 ? topPlayed : [
+      ...topPlayed,
+      ...(await q(
+        `SELECT id FROM tracks WHERE status = 'active' AND NOT (id = ANY($1::uuid[])) ORDER BY popularity DESC, created_at DESC LIMIT $2`,
+        [ids(topPlayed), 12 - topPlayed.length]
+      )),
+    ];
+    const data = { topIds: ids(topRows), newIds: ids(newTracks), catalogSize, releases, pubs };
+    home = { at: Date.now(), data };
+    return data;
+  })().finally(() => { homeBusy = null; });
+  return homeBusy;
+}
+
+let popArtists = { at: 0, rows: null };
+
+/** Artistas mais tocados do catálogo (só quando a parada de artistas em alta ainda não veio), com cache de 3 min. */
+async function popularArtists() {
+  if (popArtists.rows && Date.now() - popArtists.at < HOME_MS) return popArtists.rows;
+  const rows = await q(
+    `SELECT a.id, a.name, a.image_url FROM (
+       SELECT ta.artist_id, sum(t.popularity) AS pop FROM track_artists ta JOIN tracks t ON t.id = ta.track_id AND t.status = 'active'
+        GROUP BY ta.artist_id ORDER BY pop DESC LIMIT 12) x
+       JOIN artists a ON a.id = x.artist_id ORDER BY x.pop DESC, a.name`
+  );
+  popArtists = { at: Date.now(), rows };
+  return rows;
+}
+
+/** Até 12 faixas distintas mais recentes do histórico do usuário, olhando só as últimas `window` reproduções (null: todas). */
+const recentIds = (userId, window) => q(
+  `SELECT track_id AS id FROM (SELECT DISTINCT ON (track_id) track_id, played_at FROM (
+     SELECT track_id, played_at FROM play_history WHERE user_id = $1 ORDER BY played_at DESC LIMIT $2) h
+     ORDER BY track_id, played_at DESC) x ORDER BY played_at DESC LIMIT 12`,
+  [userId, window]
+);
+
 catalogRouter.get('/browse/home', ah(async (req, res) => {
   const u = req.user;
-  const [recentRows, topPlayed, newTracks, artists, { n: catalogSize }] = await Promise.all([
-    q(
-      `SELECT track_id AS id FROM (SELECT DISTINCT ON (track_id) track_id, played_at FROM play_history WHERE user_id = $1
-         ORDER BY track_id, played_at DESC) x ORDER BY played_at DESC LIMIT 12`,
-      [u.id]
-    ),
-    q(
-      `SELECT pc.track_id AS id FROM play_counts pc JOIN tracks t ON t.id = pc.track_id AND t.status = 'active'
-        WHERE pc.day > current_date - 30 GROUP BY pc.track_id ORDER BY sum(pc.plays) DESC LIMIT 12`
-    ),
-    q(`SELECT id FROM tracks WHERE status = 'active' ORDER BY created_at DESC LIMIT 12`),
-    q(
-      `SELECT a.id, a.name, a.image_url FROM (
-         SELECT ta.artist_id, sum(t.popularity) AS pop FROM track_artists ta JOIN tracks t ON t.id = ta.track_id AND t.status = 'active'
-          GROUP BY ta.artist_id ORDER BY pop DESC LIMIT 12) x
-         JOIN artists a ON a.id = x.artist_id ORDER BY x.pop DESC, a.name`
-    ),
-    one(`SELECT count(*)::int AS n FROM tracks WHERE status = 'active'`),
-  ]);
-  // Poucas reproduções no mês: completa com as mais populares
-  const topRows = topPlayed.length >= 12 ? topPlayed : [
-    ...topPlayed,
-    ...(await q(
-      `SELECT id FROM tracks WHERE status = 'active' AND NOT (id = ANY($1::uuid[])) ORDER BY popularity DESC, created_at DESC LIMIT $2`,
-      [ids(topPlayed), 12 - topPlayed.length]
-    )),
-  ];
-  const [recent, top, fresh, mix, releases, followedReleases, myPlaylists, publicPlaylists] = await Promise.all([
-    hydrateTracks(ids(recentRows), u), hydrateTracks(ids(topRows), u), hydrateTracks(ids(newTracks), u), mixFor(u, 20),
-    albumCards('true', [], 12),
+  const gp = globalHome();
+  const [g, recent, top, fresh, mix, followedReleases, myPlaylists, myArtists, trending] = await Promise.all([
+    gp,
+    // Tocadas recentemente: só as últimas 500 reproduções (não percorre o histórico inteiro do usuário). Quem repete
+    // poucas faixas (repetir, rádio curto) pode não fechar 12 distintas nelas: aí olha o histórico inteiro
+    recentIds(u.id, 500).then((rows) => (rows.length < 12 ? recentIds(u.id, null) : rows)).then((rows) => hydrateTracks(ids(rows), u)),
+    gp.then((x) => hydrateTracks(x.topIds, u)),
+    gp.then((x) => hydrateTracks(x.newIds, u)),
+    mixFor(u, 20),
     albumCards(
       `EXISTS (SELECT 1 FROM album_artists aa JOIN library_items li ON li.item_type = 'artist' AND li.item_id = aa.artist_id AND li.user_id = $1
                WHERE aa.album_id = al.id) AND (al.release_date IS NULL OR al.release_date > current_date - 120)`,
@@ -75,12 +126,27 @@ catalogRouter.get('/browse/home', ah(async (req, res) => {
       `(p.owner_id = $1 OR EXISTS (SELECT 1 FROM library_items li WHERE li.user_id = $1 AND li.item_type = 'playlist' AND li.item_id = p.id))`,
       [u.id], { limit: 8 }
     ),
-    playlistCards(
-      `p.visibility = 'public' AND NOT p.hidden_by_admin AND p.owner_id <> $1`, [u.id],
-      { limit: 12, order: `(SELECT count(*) FROM library_items li WHERE li.item_type = 'playlist' AND li.item_id = p.id) DESC, p.updated_at DESC` }
+    q(
+      `SELECT a.id, a.name, a.image_url FROM (
+         SELECT ta.artist_id, count(*) AS n FROM play_history h
+           JOIN track_artists ta ON ta.track_id = h.track_id AND ta.role IN ('main','featured')
+          WHERE h.user_id = $1 AND h.played_at > now() - interval '90 days' GROUP BY ta.artist_id ORDER BY n DESC LIMIT 10) x
+         JOIN artists a ON a.id = x.artist_id ORDER BY x.n DESC`,
+      [u.id]
     ),
+    // Artistas: os 10 em alta no Brasil (parada da Apple Music, atualizada em segundo plano)
+    trendingArtistsBR(u.id).then(artistCards).catch((e) => {
+      console.error('[home] artistas em alta:', e.message);
+      return null;
+    }),
   ]);
-  res.json({ catalog_size: catalogSize, recent, mix, top, fresh, releases, followed_releases: followedReleases, my_playlists: myPlaylists, public_playlists: publicPlaylists, artists });
+  const publicPlaylists = g.pubs.filter((p) => p.owner_id !== u.id).slice(0, 12);
+  // Sem a parada (primeira vez ou fora do ar): os mais tocados do catálogo
+  const artists = trending?.length ? trending : await popularArtists();
+  res.json({
+    catalog_size: g.catalogSize, recent, mix, top, fresh, releases: g.releases, followed_releases: followedReleases, my_playlists: myPlaylists,
+    public_playlists: publicPlaylists, artists, my_artists: myArtists,
+  });
 }));
 
 catalogRouter.get('/me/recommendations', ah(async (req, res) => {
@@ -161,22 +227,44 @@ catalogRouter.get('/artists/:id', ah(async (req, res) => {
     [id, req.user.id]
   );
   if (!a) throw notFound('Artista não encontrado', 'ARTIST_NOT_FOUND');
-  const top = await q(
-    `SELECT t.id FROM tracks t JOIN track_artists ta ON ta.track_id = t.id AND ta.artist_id = $1 AND ta.role IN ('main','featured')
-      WHERE t.status = 'active' GROUP BY t.id ORDER BY max(t.popularity) DESC, max(t.created_at) DESC LIMIT 10`,
+  // As 50 mais vistas no YouTube: na primeira vez espera a busca até 8 s (depois disso responde com o que há e
+  // top_pending: true, e a busca continua); depois atualiza por semana em segundo plano
+  let topPending = false;
+  if (topStale(a)) {
+    const fetching = artistTop(a, req.user.id).then(() => true, (e) => {
+      console.error('[artist-top]', a.name, e.message);
+      return true;
+    });
+    if (!a.top_fetched_at) {
+      const done = await Promise.race([fetching, new Promise((r) => setTimeout(() => r(false), 8000).unref())]);
+      topPending = !done;
+    }
+  }
+  const ranked = await q(
+    `SELECT att.track_id AS id FROM artist_top_tracks att JOIN tracks t ON t.id = att.track_id AND t.status = 'active'
+      WHERE att.artist_id = $1 ORDER BY att.rank`,
     [id]
   );
-  const albums = await albumCards(`EXISTS (SELECT 1 FROM album_artists aa WHERE aa.album_id = al.id AND aa.artist_id = $1)`, [id], 50);
-  const appearsOn = await albumCards(
-    `NOT EXISTS (SELECT 1 FROM album_artists aa WHERE aa.album_id = al.id AND aa.artist_id = $1)
-     AND EXISTS (SELECT 1 FROM tracks t JOIN track_artists ta ON ta.track_id = t.id WHERE t.album_id = al.id AND ta.artist_id = $1)`,
-    [id], 20
-  );
-  const playlists = await playlistCards(
-    `p.visibility = 'public' AND NOT p.hidden_by_admin AND EXISTS (SELECT 1 FROM playlist_items pi JOIN track_artists ta ON ta.track_id = pi.track_id WHERE pi.playlist_id = p.id AND ta.artist_id = $1)`,
-    [id], { limit: 10 }
-  );
-  res.json({ ...a, top_tracks: await hydrateTracks(ids(top), req.user), albums, appears_on: appearsOn, playlists });
+  // Completa com as do catálogo (envios próprios, importações) até 50
+  const top = ranked.length >= 50 ? ranked : ranked.concat(await q(
+    `SELECT t.id FROM tracks t JOIN track_artists ta ON ta.track_id = t.id AND ta.artist_id = $1 AND ta.role IN ('main','featured')
+      WHERE t.status = 'active' AND NOT (t.id = ANY($2::uuid[])) GROUP BY t.id ORDER BY max(t.popularity) DESC, max(t.created_at) DESC LIMIT $3`,
+    [id, ids(ranked), 50 - ranked.length]
+  ));
+  const [topTracks, albums, appearsOn, playlists] = await Promise.all([
+    hydrateTracks(ids(top), req.user),
+    albumCards(`EXISTS (SELECT 1 FROM album_artists aa WHERE aa.album_id = al.id AND aa.artist_id = $1)`, [id], 50),
+    albumCards(
+      `NOT EXISTS (SELECT 1 FROM album_artists aa WHERE aa.album_id = al.id AND aa.artist_id = $1)
+       AND EXISTS (SELECT 1 FROM tracks t JOIN track_artists ta ON ta.track_id = t.id WHERE t.album_id = al.id AND ta.artist_id = $1)`,
+      [id], 20
+    ),
+    playlistCards(
+      `p.visibility = 'public' AND NOT p.hidden_by_admin AND EXISTS (SELECT 1 FROM playlist_items pi JOIN track_artists ta ON ta.track_id = pi.track_id WHERE pi.playlist_id = p.id AND ta.artist_id = $1)`,
+      [id], { limit: 10 }
+    ),
+  ]);
+  res.json({ ...a, top_tracks: topTracks, albums, appears_on: appearsOn, playlists, top_pending: topPending });
 }));
 
 /** Rádio automático (regras da fase 1): mesmo artista, gêneros e humores da semente, por popularidade. */
