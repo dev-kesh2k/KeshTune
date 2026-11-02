@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Marca: um K com ondas de som saindo (verde-limão da marca) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M35.5,36.5L35.5,71.5"
+        android:strokeWidth="9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M61,34L43,54L61,74"
+        android:strokeWidth="9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M65.6,46.6A11,11 0,0 1,65.6 61.4"
+        android:strokeWidth="5.5"
+        android:strokeColor="#FFC6F432"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M71.2,41.2A19,19 0,0 1,71.2 66.8"
+        android:strokeWidth="4.5"
+        android:strokeColor="#FFC6F432"
+        android:strokeLineCap="round" />
+</vector>

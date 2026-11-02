@@ -35,7 +35,7 @@ api.use((req, res, next) => {
 // gzip nas respostas JSON; fica de fora o áudio (já comprimido) e o SSE (precisa sair na hora)
 api.use(compression({
   threshold: 1024,
-  filter: (req, res) => !req.path.startsWith('/stream/') && !req.path.startsWith('/offline/download/') && req.path !== '/events' && compression.filter(req, res),
+  filter: (req, res) => !req.path.startsWith('/stream/') && !req.path.startsWith('/youtube/stream/') && !req.path.startsWith('/offline/download/') && req.path !== '/events' && compression.filter(req, res),
 }));
 api.use(express.json({ limit: '1mb' }));
 

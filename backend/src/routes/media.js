@@ -20,11 +20,42 @@ export function sniffImage(buf) {
   if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp';
   return null;
 }
-export function saveImage(buf) {
+// sharp carregado na primeira imagem: sem ele instalado, o servidor sobe e guarda as imagens como vieram
+let sharpLib; // undefined: ainda não tentou; null: indisponível
+async function loadSharp() {
+  if (sharpLib === undefined) {
+    sharpLib = await import('sharp').then((m) => m.default, (e) => {
+      console.error('[images] sharp indisponível, imagens guardadas sem redimensionar:', e.message);
+      return null;
+    });
+  }
+  return sharpLib;
+}
+
+/**
+ * Guarda a imagem reduzida a no máximo 800x800 (sem cortar) em JPEG: as centrais de carro decodificam capas e fotos
+ * de artista o tempo todo, e uma foto de 4000 px custa memória e CPU à toa. Se não der para converter, guarda como veio.
+ */
+export async function saveImage(buf) {
   const ext = sniffImage(buf);
   if (!ext) throw bad('Imagem deve ser JPEG, PNG ou WebP');
-  const name = `${uuidv7()}.${ext}`;
-  fs.writeFileSync(path.join(IMAGE_DIR, name), buf);
+  let out;
+  let name;
+  try {
+    const sharp = await loadSharp();
+    if (!sharp) throw new Error('sem sharp');
+    out = await sharp(buf, { failOn: 'none', limitInputPixels: 50e6 })
+      .rotate()
+      .flatten({ background: '#000000' }) // PNG/WebP com transparência: fundo escuro, como o app
+      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toBuffer();
+    name = `${uuidv7()}.jpg`;
+  } catch {
+    out = buf;
+    name = `${uuidv7()}.${ext}`;
+  }
+  fs.writeFileSync(path.join(IMAGE_DIR, name), out);
   return `images/${name}`;
 }
 
@@ -34,7 +65,7 @@ export const mediaRouter = express.Router();
 
 mediaRouter.post('/media/images', auth(), imgUpload.single('file'), ah(async (req, res) => {
   if (!req.file) throw bad('Envie a imagem no campo "file"');
-  res.status(201).json({ url: saveImage(req.file.buffer) });
+  res.status(201).json({ url: await saveImage(req.file.buffer) });
 }));
 
 mediaRouter.get('/media/images/:name', (req, res) => {
