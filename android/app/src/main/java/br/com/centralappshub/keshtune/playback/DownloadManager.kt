@@ -3,6 +3,7 @@ package br.com.centralappshub.keshtune.playback
 import android.content.Context
 import br.com.centralappshub.keshtune.data.ApiException
 import br.com.centralappshub.keshtune.data.Connectivity
+import br.com.centralappshub.keshtune.data.DownloadGroup
 import br.com.centralappshub.keshtune.data.MusicRepository
 import br.com.centralappshub.keshtune.data.Track
 import br.com.centralappshub.keshtune.data.coverUrlsToWarm
@@ -146,7 +147,12 @@ class DownloadManager @Inject constructor(
         lenFile(id).delete()
     }
 
-    fun enqueue(tracks: List<Track>) {
+    /** group: a coleção de onde veio o lote (mix, playlist, álbum), para a tela Baixadas organizar por ela. */
+    fun enqueue(tracks: List<Track>, group: DownloadGroup? = null) {
+        if (group != null) {
+            val list = tracks.filter { it.playable }.distinctBy { it.id }
+            if (list.isNotEmpty()) scope.launch { runCatching { repo.saveDownloadGroup(group, list) } }
+        }
         val todo = tracks.filter { it.playable && it.id !in downloaded.value && it.id !in _active.value }.distinctBy { it.id }
         if (todo.isEmpty()) return
         _active.update { m -> m + todo.associate { it.id to 0f } }
@@ -244,6 +250,11 @@ class DownloadManager @Inject constructor(
     suspend fun delete(trackId: String) {
         withContext(Dispatchers.IO) { DownloadFiles.file(context, trackId).delete() }
         repo.deleteDownload(trackId)
+    }
+
+    /** Apaga a coleção e os arquivos das músicas que não estão em outra coleção. */
+    suspend fun deleteGroup(groupId: String) {
+        repo.deleteDownloadGroup(groupId).forEach { delete(it) }
     }
 
     /** Ao sair da conta: para a fila e apaga todos os arquivos baixados. */

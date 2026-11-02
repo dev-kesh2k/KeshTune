@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +64,7 @@ import androidx.compose.runtime.Stable
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import br.com.centralappshub.keshtune.data.DownloadGroup
 import br.com.centralappshub.keshtune.data.Track
 import br.com.centralappshub.keshtune.data.YtResult
 import br.com.centralappshub.keshtune.playback.PlayerConnection
@@ -76,6 +78,7 @@ class Nav(
     val liked: () -> Unit,
     val downloads: () -> Unit,
     val mix: (String) -> Unit,
+    val downloadGroup: (String) -> Unit,
 )
 
 // ---------------- Login ----------------
@@ -349,7 +352,7 @@ fun AlbumScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: Albu
                     enabled = a.tracks.any { it.playable },
                     onPlay = { player.play(a.tracks) },
                     onShuffle = { player.play(a.tracks, shuffle = true) },
-                    onDownload = { downloads?.enqueue(a.tracks) },
+                    onDownload = { downloads?.enqueue(a.tracks, DownloadGroup("album:${a.id}", a.title, "Álbum", a.coverUrl)) },
                 )
                 a.artists.firstOrNull()?.let { ar ->
                     TextButton({ nav.artist(ar.id) }, Modifier.padding(horizontal = 8.dp)) { Text("Ver ${ar.name}") }
@@ -407,7 +410,13 @@ fun PlaylistScreen(player: PlayerConnection, playingId: String?, vm: PlaylistVie
                 enabled = anyPlayable,
                 onPlay = { player.play(tracks) },
                 onShuffle = { player.play(tracks, shuffle = true) },
-                onDownload = { downloads?.enqueue(tracks) },
+                onDownload = {
+                    val id = remote?.id ?: local?.id
+                    downloads?.enqueue(
+                        tracks,
+                        id?.let { DownloadGroup("playlist:$it", name, "Playlist", remote?.coverUrl ?: remote?.mosaic?.firstOrNull() ?: local?.image) },
+                    )
+                },
             )
         })
     }
@@ -461,7 +470,10 @@ fun MixScreen(player: PlayerConnection, playingId: String?, vm: MixViewModel = h
                     enabled = anyPlayable,
                     onPlay = { player.play(m.tracks) },
                     onShuffle = { player.play(m.tracks, shuffle = true) },
-                    onDownload = { downloads?.enqueue(m.tracks) },
+                    onDownload = {
+                        val kind = if (m.id.startsWith("RDCLAK")) "Playlist do YouTube Music" else "Mix"
+                        downloads?.enqueue(m.tracks, DownloadGroup("mix:${m.id}", m.title, kind, m.imageUrl ?: m.tracks.firstOrNull()?.coverUrl))
+                    },
                 )
             })
         }
@@ -480,26 +492,69 @@ fun LikedScreen(player: PlayerConnection, playingId: String?, vm: LikedViewModel
             enabled = tracks.isNotEmpty(),
             onPlay = { player.play(tracks) },
             onShuffle = { player.play(tracks, shuffle = true) },
-            onDownload = { downloads?.enqueue(tracks) },
+            onDownload = { downloads?.enqueue(tracks, DownloadGroup("liked", "Músicas curtidas", "Playlist", null)) },
         )
     })
 }
 
 @Composable
-fun DownloadsScreen(player: PlayerConnection, playingId: String?, vm: DownloadsViewModel = hiltViewModel()) {
+fun DownloadsScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: DownloadsViewModel = hiltViewModel()) {
     val tracks by vm.tracks.collectAsStateWithLifecycle()
-    if (tracks.isEmpty()) {
+    val groups by vm.groups.collectAsStateWithLifecycle()
+    val loose by vm.loose.collectAsStateWithLifecycle()
+    if (tracks.isEmpty() && groups.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-            Text("Nenhuma música baixada. Toque em ⤓ ao lado de uma música, ou em Baixar numa playlist ou álbum.", color = Kesh.muted)
+            Text("Nenhuma música baixada. Toque em ⤓ ao lado de uma música, ou em Baixar num mix, playlist ou álbum.", color = Kesh.muted)
         }
         return
     }
+    LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "header") {
+            CollectionHeader(
+                null, "Sem internet", "Baixadas", "${tracks.size} músicas",
+                enabled = tracks.isNotEmpty(),
+                onPlay = { player.play(tracks) },
+                onShuffle = { player.play(tracks, shuffle = true) },
+            )
+        }
+        if (groups.isNotEmpty()) {
+            item(key = "groups-title") { SectionTitle("Mixes, playlists e álbuns") }
+            items(groups, key = { "g:" + it.id }) { g ->
+                // "12 de 50": ainda baixando (ou parte falhou); só o número quando a coleção está completa
+                val count = if (g.done < g.total) "${g.done} de ${g.total} músicas" else "${g.total} músicas"
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        LibraryRow(g.title, "${g.kind} • $count", g.image) { nav.downloadGroup(g.id) }
+                    }
+                    IconButton({ vm.deleteGroup(g.id) }, Modifier.padding(end = 8.dp)) {
+                        Icon(Icons.Default.Delete, "Apagar ${g.title}", tint = Kesh.muted)
+                    }
+                }
+            }
+        }
+        if (loose.isNotEmpty()) {
+            item(key = "loose-title") { SectionTitle("Músicas baixadas avulsas") }
+            itemsIndexed(loose, key = { i, t -> "l:$i:${t.id}" }) { i, t ->
+                TrackRow(t, t.id == playingId, trailing = {
+                    IconButton({ vm.delete(t.id) }) { Icon(Icons.Default.Delete, "Apagar download", tint = Kesh.muted) }
+                }) { player.play(loose, i) }
+            }
+        }
+    }
+}
+
+/** Uma coleção baixada (mix, playlist, álbum): só as músicas que já estão no aparelho, na ordem dela. */
+@Composable
+fun DownloadGroupScreen(player: PlayerConnection, playingId: String?, vm: DownloadGroupViewModel = hiltViewModel()) {
+    val group by vm.group.collectAsStateWithLifecycle()
+    val tracks by vm.tracks.collectAsStateWithLifecycle()
+    val g = group ?: return Loading()
     TrackListScreen(
         tracks, playingId, player,
         header = {
             CollectionHeader(
-                null, "Sem internet", "Baixadas", "${tracks.size} músicas",
-                enabled = true,
+                g.image ?: tracks.firstOrNull()?.coverUrl, "${g.kind} baixado", g.title, "${tracks.size} músicas no aparelho",
+                enabled = tracks.isNotEmpty(),
                 onPlay = { player.play(tracks) },
                 onShuffle = { player.play(tracks, shuffle = true) },
             )

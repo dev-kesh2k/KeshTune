@@ -2,6 +2,7 @@ package br.com.centralappshub.keshtune.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -149,6 +150,7 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
             liked = { nav.navigate("liked") },
             downloads = { nav.navigate("downloads") },
             mix = { nav.navigate("mix/$it") },
+            downloadGroup = { nav.navigate("downloads/${Uri.encode(it)}") },
         )
     }
     val selectTab = { r: String ->
@@ -227,7 +229,8 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
                     composable("search") { SearchScreen(go, player, playingIdState.value) }
                     composable("library") { LibraryScreen(go) }
                     composable("liked") { LikedScreen(player, playingIdState.value) }
-                    composable("downloads") { DownloadsScreen(player, playingIdState.value) }
+                    composable("downloads") { DownloadsScreen(go, player, playingIdState.value) }
+                    composable("downloads/{id}") { DownloadGroupScreen(player, playingIdState.value) }
                     composable("album/{id}") { AlbumScreen(go, player, playingIdState.value) }
                     composable("artist/{id}") { ArtistScreen(go, player, playingIdState.value) }
                     composable("playlist/{id}") { PlaylistScreen(player, playingIdState.value) }
