@@ -51,13 +51,13 @@ private val colors = darkColorScheme(
 
 // Letras um pouco maiores que o padrão: a tela do carro fica mais longe dos olhos
 private val type = Typography(
-    headlineLarge = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold),
-    titleMedium = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 17.sp),
-    bodyMedium = TextStyle(fontSize = 15.sp),
-    labelLarge = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+    headlineLarge = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold),
+    headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 16.sp),
+    bodyMedium = TextStyle(fontSize = 14.sp),
+    labelLarge = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
 )
 
 @Composable
