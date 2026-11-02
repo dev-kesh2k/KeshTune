@@ -339,7 +339,7 @@ fun TrackRow(track: Track, playing: Boolean, trailing: (@Composable () -> Unit)?
 private fun Card(image: String?, title: String, subtitle: String?, round: Boolean = false, onClick: () -> Unit) {
     Column(
         Modifier
-            .width(172.dp)
+            .width(140.dp)
             .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
             .padding(8.dp),
@@ -347,7 +347,7 @@ private fun Card(image: String?, title: String, subtitle: String?, round: Boolea
     ) {
         // Sem sombra (cara de desenhar em dezenas de cards durante a rolagem); só um contorno sutil
         val shape = if (round) CircleShape else RoundedCornerShape(18.dp)
-        Cover(image, 156.dp, modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.06f), shape), shape = shape)
+        Cover(image, 126.dp, modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.06f), shape), shape = shape)
         Spacer(Modifier.height(10.dp))
         Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (!subtitle.isNullOrBlank()) {
