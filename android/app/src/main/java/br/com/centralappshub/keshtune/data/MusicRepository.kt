@@ -52,6 +52,7 @@ class MusicRepository @Inject constructor(
         withContext(Dispatchers.IO) {
             syncPrefs.edit().clear().apply()
             AtomicFile(homeFile()).delete()
+            AtomicFile(mixesFile()).delete()
         }
     }
 
@@ -98,6 +99,46 @@ class MusicRepository @Inject constructor(
     }?.also { lastHome = it }
 
     private fun homeFile() = File(context.filesDir, "home.json")
+
+    // ----- Mixes (playlists do YouTube Music e mixes do YouTube) -----
+
+    /**
+     * Mixes da rede, guardados para abrir sem internet. Se o servidor ainda está montando as playlists do
+     * YouTube Music (pending), fica a lista guardada, que é mais completa.
+     */
+    suspend fun mixes(): Mixes {
+        val fresh = try {
+            call { mixes() }
+        } catch (e: IOException) {
+            return cachedMixes() ?: throw e
+        }
+        if (fresh.pending) cachedMixes()?.takeIf { it.sections.size > fresh.sections.size }?.let { return it.copy(pending = true) }
+        if (!fresh.pending) withContext(Dispatchers.IO) { writeAtomic(mixesFile(), json.encodeToString(fresh)) }
+        return fresh
+    }
+
+    suspend fun cachedMixes(): Mixes? = withContext(Dispatchers.IO) {
+        runCatching { json.decodeFromString<Mixes>(AtomicFile(mixesFile()).readFully().decodeToString()) }.getOrNull()
+    }
+
+    suspend fun mix(id: String): MixDetail = call { mix(id) }
+
+    private fun mixesFile() = File(context.filesDir, "mixes.json")
+
+    private fun writeAtomic(target: File, text: String) {
+        val file = AtomicFile(target)
+        val out = try {
+            file.startWrite()
+        } catch (e: IOException) {
+            return
+        }
+        try {
+            out.write(text.toByteArray())
+            file.finishWrite(out)
+        } catch (e: Exception) {
+            file.failWrite(out)
+        }
+    }
     suspend fun album(id: String): AlbumDetail = call { album(id) }
     suspend fun artist(id: String): ArtistDetail = call { artist(id) }
     suspend fun track(id: String): Track = call { track(id) }

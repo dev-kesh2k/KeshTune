@@ -59,6 +59,12 @@ interface KeshApi {
         @Query("dym") dym: Int = 0,
     ): SearchResult
 
+    @GET("youtube/mixes")
+    suspend fun mixes(): Mixes
+
+    @GET("youtube/mixes/{id}")
+    suspend fun mix(@Path("id") id: String): MixDetail
+
     @GET("youtube/search")
     suspend fun youtubeSearch(@Query("q") q: String): YtSearch
 

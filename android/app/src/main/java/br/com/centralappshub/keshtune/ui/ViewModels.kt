@@ -9,6 +9,8 @@ import br.com.centralappshub.keshtune.data.ArtistDetail
 import br.com.centralappshub.keshtune.data.Connectivity
 import br.com.centralappshub.keshtune.data.Home
 import br.com.centralappshub.keshtune.data.Library
+import br.com.centralappshub.keshtune.data.MixDetail
+import br.com.centralappshub.keshtune.data.Mixes
 import br.com.centralappshub.keshtune.data.MusicRepository
 import br.com.centralappshub.keshtune.data.PlaylistDetail
 import br.com.centralappshub.keshtune.data.SearchResult
@@ -273,6 +275,43 @@ class ArtistViewModel @Inject constructor(saved: SavedStateHandle, private val r
             }
         }
     }
+}
+
+@HiltViewModel
+class MixesViewModel @Inject constructor(private val repo: MusicRepository) : ViewModel() {
+    val state = MutableStateFlow<Ui<Mixes>>(Ui.Loading)
+    private var retries = 0
+
+    init {
+        viewModelScope.launch {
+            repo.cachedMixes()?.let { if (state.value !is Ui.Ok) state.value = Ui.Ok(it) }
+            refresh()
+        }
+    }
+
+    fun refresh() {
+        load(state) { repo.mixes() }.invokeOnCompletion {
+            // Servidor recém-ligado ainda montando as playlists do YouTube Music: pede de novo daqui a pouco
+            if ((state.value as? Ui.Ok)?.data?.pending == true && retries++ < 8) {
+                viewModelScope.launch {
+                    delay(15_000)
+                    refresh()
+                }
+            }
+        }
+    }
+}
+
+@HiltViewModel
+class MixViewModel @Inject constructor(saved: SavedStateHandle, private val repo: MusicRepository) : ViewModel() {
+    private val id: String = checkNotNull(saved["id"])
+    val state = MutableStateFlow<Ui<MixDetail>>(Ui.Loading)
+
+    init {
+        refresh()
+    }
+
+    fun refresh() = load(state) { repo.mix(id) }
 }
 
 /** Playlist: mostra a cópia local na hora e atualiza pela rede. */

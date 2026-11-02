@@ -72,6 +72,28 @@ data class Home(
     val myArtists: List<ArtistCard> = emptyList(),
 )
 
+/** Playlist do YouTube Music (id RDCLAK5uy_…) ou mix automático do YouTube (RD + id do vídeo). */
+@Serializable
+data class MixCard(val id: String, val title: String, val subtitle: String? = null, val imageUrl: String? = null) {
+    val isYoutubeMusic: Boolean get() = id.startsWith("RDCLAK")
+}
+
+@Serializable
+data class MixSection(val title: String, val items: List<MixCard> = emptyList())
+
+/** pending: o servidor ainda está montando as playlists do YouTube Music (acabou de ligar); o app pede de novo. */
+@Serializable
+data class Mixes(val sections: List<MixSection> = emptyList(), val pending: Boolean = false)
+
+@Serializable
+data class MixDetail(
+    val id: String,
+    val title: String,
+    val description: String? = null,
+    val imageUrl: String? = null,
+    val tracks: List<Track> = emptyList(),
+)
+
 @Serializable
 data class AlbumDetail(
     val id: String,
