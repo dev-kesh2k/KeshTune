@@ -1,12 +1,12 @@
 import { execFile } from 'child_process';
 import express from 'express';
 import { Readable } from 'stream';
-import { one, q } from '../db.js';
+import { one, q, tx } from '../db.js';
 import { adminOnly, audit, auth, verifyStream } from '../security.js';
 import { getSettings } from '../seed.js';
 import { ah, bad, forbidden, int, notFound, str, uuidList, uuidParam } from '../util.js';
 import { hydrateTracks } from '../views.js';
-import { createTrack } from './admin.js';
+import { createTrack, findOrCreateArtist } from './admin.js';
 import { saveImage } from './media.js';
 import { detect, enqueueJob, YTDLP_JS } from './imports.js';
 import { addToMyMusic, createPlaylistWithTracks } from './playlists.js';
@@ -396,7 +396,7 @@ youtubeRouter.post('/youtube/playlists/import', ah(async (req, res) => {
  * Garante as faixas dos vídeos no catálogo (source 'youtube'), na ordem recebida. Vídeos já cadastrados são
  * reaproveitados (e ganham o gênero, se houver). Devolve [{ id, created }] (id null se não deu para cadastrar).
  */
-async function ensureTracks(videos, userId, genreId = null) {
+async function ensureTracks(videos, userId, genreId = null, { convert = true } = {}) {
   for (const v of videos) known.set(v.youtube_id, v);
   const existing = await catalogMatches(videos.map((v) => v.youtube_id));
   const out = [];
@@ -415,8 +415,8 @@ async function ensureTracks(videos, userId, genreId = null) {
         duration_ms: v.duration_ms || 0, genre_ids: genreId ? [genreId] : [],
       }, userId);
       existing.set(v.youtube_id, { id: t.id, source: 'youtube' }); // vídeo repetido na mesma lista
-      // converte para arquivo próprio em segundo plano (o app nativo só toca arquivo)
-      enqueueJob({ kind: 'youtube', url: `https://www.youtube.com/watch?v=${v.youtube_id}`, trackId: t.id, userId }).catch(() => {});
+      // converte para arquivo próprio em segundo plano (listas grandes, como o top do artista, só quando alguém tocar)
+      if (convert) enqueueJob({ kind: 'youtube', url: `https://www.youtube.com/watch?v=${v.youtube_id}`, trackId: t.id, userId }).catch(() => {});
       out.push({ id: t.id, created: true });
       newArtists = true;
     } catch (e) {
@@ -426,6 +426,96 @@ async function ensureTracks(videos, userId, genreId = null) {
   }
   if (newArtists) setTimeout(() => fillArtistImages().catch(() => {}), 1000);
   return out;
+}
+
+// ---------------- Artistas em alta no Brasil e top 50 de cada artista ----------------
+
+// Parada pública da Apple Music (as 50 mais tocadas no Brasil hoje); não precisa de chave nem gasta cota do YouTube
+const CHART_URL = 'https://rss.marketingtools.apple.com/api/v2/br/music/most-played/50/songs.json';
+let chart = { at: 0, ids: [] };
+let chartBusy = null;
+
+/**
+ * Nome do artista principal de cada música da parada. Duplas vêm como "Zé Neto & Cristiano" e participações como
+ * "Hugo & Guilherme & Zé Vaqueiro": fica o nome mais curto que também aparece sozinho na parada.
+ */
+function chartArtists(results) {
+  const first = (s) => String(s || '').split(/,\s*/)[0].trim();
+  const alone = new Set(results.map((r) => first(r.artistName)).filter(Boolean));
+  const score = new Map();
+  for (const [i, r] of results.entries()) {
+    const name = first(r.artistName);
+    if (!name) continue;
+    const credit = [...alone].filter((s) => name === s || name.startsWith(`${s} & `)).sort((a, b) => a.length - b.length)[0] || name;
+    score.set(credit, (score.get(credit) || 0) + (results.length - i));
+  }
+  return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+}
+
+/** Top 10 artistas em alta no Brasil, como artistas do catálogo (cadastra os que faltam). Atualiza a cada 6 h. */
+export async function trendingArtistsBR(userId) {
+  if (chart.ids.length && Date.now() - chart.at < 6 * 3600 * 1000) return chart.ids;
+  chartBusy ??= (async () => {
+    const r = await fetch(CHART_URL, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`parada ${r.status}`);
+    const names = chartArtists((await r.json()).feed?.results || []).slice(0, 10);
+    const ids = [];
+    for (const n of names) ids.push(await findOrCreateArtist({ q, one }, n.slice(0, 200)));
+    chart = { at: Date.now(), ids };
+    setTimeout(() => fillArtistImages().catch(() => {}), 1000);
+    // Deixa o top 50 desses artistas pronto antes de alguém abrir (um por vez)
+    (async () => {
+      for (const id of ids) {
+        const a = await one(`SELECT id, name, top_fetched_at FROM artists WHERE id = $1`, [id]);
+        if (a && topStale(a)) await artistTop(a, userId).catch((e) => console.error('[artist-top]', a.name, e.message));
+      }
+    })();
+    return ids;
+  })().finally(() => { chartBusy = null; });
+  return chartBusy;
+}
+
+export const topStale = (a) => !a.top_fetched_at || Date.now() - new Date(a.top_fetched_at).getTime() > 7 * 86400000;
+
+/** Vídeos do YouTube mais vistos de uma busca (ordenados por visualizações). */
+async function mostViewed(text, n) {
+  if ((await detect('youtube')).available) {
+    try {
+      // sp=CAMSAhAB: ordenar por visualizações, só vídeos
+      const j = await ytdlpJson(`https://www.youtube.com/results?search_query=${encodeURIComponent(text)}&sp=CAMSAhAB`, ['--playlist-end', String(n)]);
+      return videoEntries(j.entries);
+    } catch (e) { console.error('[youtube] mais vistos:', e.message); }
+  }
+  return searchMany(text, n);
+}
+
+const topBusy = new Map(); // artist id -> promise
+
+/** Busca as 50 músicas mais vistas do artista no YouTube e guarda em artist_top_tracks (tocam pelo YouTube). */
+export function artistTop(artist, userId) {
+  if (topBusy.has(artist.id)) return topBusy.get(artist.id);
+  const p = (async () => {
+    if (!(await getSettings()).youtube_enabled) return;
+    const want = norm(artist.name);
+    const seen = new Set();
+    const songs = (await mostViewed(`${artist.name} música`, 120)).filter((v) => {
+      if (seen.has(v.youtube_id) || NOT_A_SONG.test(v.title)) return false;
+      seen.add(v.youtube_id);
+      if (v.duration_ms && (v.duration_ms < 90000 || v.duration_ms > 600000)) return false;
+      // Só vídeos do próprio artista (no título ou no canal)
+      return !!want && norm(`${v.title} ${v.channel}`).includes(want);
+    }).slice(0, 50);
+    const ids = [...new Set((await ensureTracks(songs, userId, null, { convert: false })).map((r) => r.id).filter(Boolean))];
+    await tx(async (db) => {
+      await db.q(`DELETE FROM artist_top_tracks WHERE artist_id = $1`, [artist.id]);
+      for (const [rank, trackId] of ids.entries()) {
+        await db.q(`INSERT INTO artist_top_tracks (artist_id, rank, track_id) VALUES ($1,$2,$3)`, [artist.id, rank, trackId]);
+      }
+      await db.q(`UPDATE artists SET top_fetched_at = now() WHERE id = $1`, [artist.id]);
+    });
+  })().finally(() => topBusy.delete(artist.id));
+  topBusy.set(artist.id, p);
+  return p;
 }
 
 /**
