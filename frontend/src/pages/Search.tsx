@@ -148,15 +148,7 @@ export default function Search() {
 
       {q ? (
         <>
-          <div className="-mx-4 mb-5 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:px-0">
-            <div className="flex gap-2">
-              {FILTERS.map(([k, label]) => (
-                <button key={k} className={`chip ${filter === k ? 'chip-on' : ''}`} onClick={() => setFilter(k)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <YoutubeResults q={q} />
           {result?.did_you_mean && (
             <p className="mb-4 text-sm text-muted">
               Você quis dizer{' '}
@@ -172,29 +164,12 @@ export default function Search() {
             <ErrorBox text={err} />
           ) : result && total === 0 ? (
             filter === 'all' || filter === 'track' || filter === 'playlist' ? (
-              <p className="mb-4 text-sm text-muted">Nada no catálogo para "{q}".</p>
+              null
             ) : (
               <Empty icon={<SearchIcon className="h-10 w-10" />} title={`Nada encontrado para "${q}"`} text="Confira a ortografia ou tente outras palavras." />
             )
           ) : result ? (
             <div className={busy ? 'opacity-60' : ''}>
-              {!!result.tracks?.length && (
-                <Section title="Músicas">
-                  <TrackList
-                    tracks={result.tracks}
-                    showAlbum
-                    onPlay={(i) => {
-                      saveHistory({ query: q, item_type: 'track', item_id: result.tracks![i].id });
-                      player.playTracks(result.tracks!, i, { type: 'search', name: `Busca: ${q}` });
-                    }}
-                  />
-                </Section>
-              )}
-              {!!result.artists?.length && (
-                <Section title="Artistas">
-                  <div className={tileGrid}>{result.artists.map((a) => <ArtistTile key={a.id} a={a} grid />)}</div>
-                </Section>
-              )}
               {!!result.albums?.length && (
                 <Section title="Álbuns">
                   <div className={tileGrid}>{result.albums.map((a) => <AlbumTile key={a.id} a={a} grid />)}</div>
@@ -205,23 +180,9 @@ export default function Search() {
                   <div className={tileGrid}>{result.playlists.map((p) => <PlaylistTile key={p.id} p={p} grid />)}</div>
                 </Section>
               )}
-              {!!result.users?.length && (
-                <Section title="Perfis">
-                  <div className={tileGrid}>
-                    {result.users.map((u) => (
-                      <Link key={u.id} to={`/user/${u.id}`} className="block min-w-0 rounded-xl p-2 hover:bg-white/[0.06]">
-                        <Cover url={u.avatar_url} alt={u.display_name} round icon={<UserRound className="h-1/3 w-1/3" />} className="mb-2 w-full" />
-                        <p className="truncate text-sm font-semibold">{u.display_name}</p>
-                        <p className="text-xs text-muted">Perfil</p>
-                      </Link>
-                    ))}
-                  </div>
-                </Section>
-              )}
             </div>
           ) : null}
-          {(filter === 'all' || filter === 'track') && <YoutubeResults q={q} />}
-          {(filter === 'all' || filter === 'playlist') && <YoutubePlaylists q={q} />}
+          <YoutubePlaylists q={q} />
         </>
       ) : (
         <>

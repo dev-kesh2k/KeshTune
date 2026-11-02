@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { CircleArrowDown, Heart, Home, Library, Plus, Search, Settings, Shield, WifiOff } from 'lucide-react';
+import { CircleArrowDown, Heart, Home, Library, ListMusic, Plus, Search, Settings, Shield, WifiOff } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { forgetDevice, syncOffline, useOfflineMode } from '../lib/offline';
@@ -96,16 +96,14 @@ export function Layout() {
   }, []);
   const navItems = [
     { to: '/', label: 'Início', icon: Home, end: true },
+    { to: '/mixes', label: 'Mixes', icon: ListMusic },
     { to: '/search', label: 'Buscar', icon: Search },
     { to: '/library', label: 'Biblioteca', icon: Library },
     { to: '/downloads', label: 'Downloads', icon: CircleArrowDown },
     ...(me?.role === 'admin' ? [{ to: '/admin', label: 'Admin', icon: Shield }] : []),
   ];
-  const mobileNav = [
-    navItems[0], navItems[1], navItems[2],
-    me?.role === 'admin' ? { to: '/admin', label: 'Admin', icon: Shield } : { to: '/downloads', label: 'Downloads', icon: CircleArrowDown },
-    { to: '/settings', label: 'Conta', icon: Settings },
-  ];
+  // Celular: as mesmas abas do app (Downloads, Admin e Configurações ficam na Biblioteca e no menu da conta)
+  const mobileNav = [navItems[0], navItems[1], navItems[2], navItems[3], { to: '/settings', label: 'Conta', icon: Settings }];
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-bg">
@@ -162,7 +160,7 @@ export function Layout() {
         </aside>
 
         {/* Conteúdo */}
-        <main id="main" className="relative min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-surface lg:rounded-2xl">
+        <main id="main" className="relative min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[linear-gradient(180deg,#1a1233_0%,#09090d_480px)] lg:rounded-3xl">
           {offline && (
             <div className="sticky top-0 z-30 flex items-center justify-center gap-2 bg-amber-500 px-3 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] text-center text-xs font-semibold text-black">
               <WifiOff className="h-4 w-4 shrink-0" /> Modo offline: só o que foi baixado está disponível
