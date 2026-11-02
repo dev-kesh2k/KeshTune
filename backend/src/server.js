@@ -111,6 +111,7 @@ const publicPath = String(process.env.PUBLIC_PATH || '').replace(/\/+$/, '');
 if (publicPath) app.use(`${publicPath}/api`, api);
 app.use('/api', api);
 app.use('/v1', api);
+app.use(api); // proxy do Hub já tira /<slug>/api
 
 const port = Number(process.env.PORT) || 3000;
 (async () => {
