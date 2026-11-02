@@ -207,9 +207,11 @@ async function tick() {
 }
 
 /** Coloca um job na fila e acorda o worker. */
-export async function enqueueJob({ kind, url, trackId = null, userId }) {
+export async function enqueueJob({ kind, url, trackId = null, userId, urgent = false }) {
   const id = uuidv7();
-  await q(`INSERT INTO import_jobs (id, kind, url, track_id, created_by) VALUES ($1,$2,$3,$4,$5)`, [id, kind, url, trackId, userId]);
+  // urgent: alguém está esperando para ouvir (app nativo) → passa à frente da fila (o worker pega pelo created_at)
+  await q(`INSERT INTO import_jobs (id, kind, url, track_id, created_by, created_at)
+           VALUES ($1,$2,$3,$4,$5, CASE WHEN $6 THEN now() - interval '100 years' ELSE now() END)`, [id, kind, url, trackId, userId, urgent]);
   setImmediate(tick);
   return id;
 }

@@ -338,6 +338,8 @@ async function ensureTracks(videos, userId, genreId = null) {
         duration_ms: v.duration_ms || 0, genre_ids: genreId ? [genreId] : [],
       }, userId);
       existing.set(v.youtube_id, { id: t.id, source: 'youtube' }); // vídeo repetido na mesma lista
+      // converte para arquivo próprio em segundo plano (o app nativo só toca arquivo)
+      enqueueJob({ kind: 'youtube', url: `https://www.youtube.com/watch?v=${v.youtube_id}`, trackId: t.id, userId }).catch(() => {});
       out.push({ id: t.id, created: true });
       newArtists = true;
     } catch (e) {
@@ -383,6 +385,7 @@ youtubeRouter.post('/admin/genres/:id/trending', auth(), adminOnly, ah(async (re
  */
 youtubeRouter.post('/youtube/downloads', ah(async (req, res) => {
   const ids = uuidList(req.body?.track_ids, 'track_ids', 500);
+  const urgent = !!req.body?.urgent && ids.length <= 5; // ouvinte esperando a faixa tocar
   const tracks = new Map((await q(`SELECT id, source, youtube_id, status FROM tracks WHERE id = ANY($1::uuid[])`, [ids])).map((t) => [t.id, t]));
   const pending = new Map((await q(
     `SELECT DISTINCT ON (track_id) track_id, id, status FROM import_jobs
@@ -396,10 +399,14 @@ youtubeRouter.post('/youtube/downloads', ah(async (req, res) => {
     if (!t || t.status !== 'active') { items.push({ track_id: id, status: 'failed', job_id: null, error: 'Faixa não encontrada' }); continue; }
     if (t.source === 'file') { items.push({ track_id: id, status: 'done', job_id: null }); continue; }
     const p = pending.get(id);
-    if (p) { items.push({ track_id: id, status: p.status, job_id: p.id }); continue; }
+    if (p) {
+      if (urgent && p.status === 'queued') await q(`UPDATE import_jobs SET created_at = now() - interval '100 years' WHERE id = $1 AND status = 'queued'`, [p.id]);
+      items.push({ track_id: id, status: p.status, job_id: p.id });
+      continue;
+    }
     tool ??= await detect('youtube');
     if (!tool.available) throw bad('O yt-dlp não está instalado no servidor', 'YTDLP_UNAVAILABLE');
-    const jobId = await enqueueJob({ kind: 'youtube', url: `https://www.youtube.com/watch?v=${t.youtube_id}`, trackId: id, userId: req.user.id });
+    const jobId = await enqueueJob({ kind: 'youtube', url: `https://www.youtube.com/watch?v=${t.youtube_id}`, trackId: id, userId: req.user.id, urgent });
     items.push({ track_id: id, status: 'queued', job_id: jobId });
   }
   await addToMyMusic(req.user, items.filter((i) => i.status !== 'failed').map((i) => i.track_id)).catch((e) => console.error('[my_music]', e.message));
