@@ -1,9 +1,33 @@
 /* KeshTune — cache do "casco" do app para abrir sem internet. A API e o áudio nunca são cacheados aqui. */
-const CACHE = 'spx-shell-v1';
+const CACHE = 'spx-shell-v2';
 const BASE = new URL('./', self.location).pathname;
 
+// Guarda o casco e TODOS os arquivos do app (inclusive as telas carregadas sob demanda), para abrir tudo sem internet.
+async function precacheAll() {
+  const c = await caches.open(CACHE);
+  await c.addAll([BASE, `${BASE}icon.svg`, `${BASE}manifest.webmanifest`]);
+  const seen = new Set();
+  const queue = [];
+  const enqueue = (text) => {
+    for (const m of text.matchAll(/(?:assets\/|\.\/)([\w.-]+\.(?:js|css))/g)) {
+      const url = new URL(`${BASE}assets/${m[1]}`, self.location.origin).href;
+      if (!seen.has(url) && seen.size < 400) { seen.add(url); queue.push(url); }
+    }
+  };
+  enqueue(await (await c.match(BASE)).text());
+  while (queue.length) {
+    const batch = queue.splice(0, 6);
+    await Promise.allSettled(batch.map(async (u) => {
+      const r = await fetch(u);
+      if (!r.ok) return;
+      await c.put(u, r.clone());
+      if (u.endsWith('.js')) enqueue(await r.text());
+    }));
+  }
+}
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll([BASE, `${BASE}icon.svg`, `${BASE}manifest.webmanifest`])).then(() => self.skipWaiting()));
+  // não bloqueia a instalação se algum arquivo falhar
+  e.waitUntil(precacheAll().catch(() => {}).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
