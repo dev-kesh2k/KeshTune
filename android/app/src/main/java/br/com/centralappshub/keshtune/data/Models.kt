@@ -92,6 +92,8 @@ data class ArtistDetail(
     val topTracks: List<Track> = emptyList(),
     val albums: List<AlbumCard> = emptyList(),
     val appearsOn: List<AlbumCard> = emptyList(),
+    /** O servidor ainda está buscando as mais tocadas (primeira abertura): vale pedir de novo daqui a pouco. */
+    val topPending: Boolean = false,
 )
 
 @Serializable
@@ -210,3 +212,16 @@ fun mediaUrl(u: String?): String? = when {
     u.startsWith("http://") || u.startsWith("https://") -> u
     else -> "${BuildConfig.APP_URL}api/media/$u"
 }
+
+/** Miniatura padrão do YouTube (480x360, 4:3 com faixas pretas em cima e embaixo). */
+private val YT_HQ = Regex("""^(https://i\.ytimg\.com/vi/[\w-]+/)hqdefault\.jpg$""")
+
+/**
+ * Versão pequena de uma capa hqdefault do YouTube: a mqdefault (320x180, já 16:9 e sem faixas pretas), usada nas
+ * capas pequenas e no fundo desfocado; null para as outras URLs. Quem aquece o cache de capas grava as duas.
+ */
+fun ytSmallCover(full: String?): String? =
+    if (full != null && YT_HQ.matches(full)) full.replace(YT_HQ, "\$1mqdefault.jpg") else null
+
+/** URLs a aquecer no cache em disco para a capa aparecer sem internet: a original e, do YouTube, a pequena. */
+fun coverUrlsToWarm(full: String?): List<String> = listOfNotNull(full, ytSmallCover(full))

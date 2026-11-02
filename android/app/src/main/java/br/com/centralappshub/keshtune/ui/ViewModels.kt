@@ -27,12 +27,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 @HiltViewModel
@@ -60,30 +62,50 @@ class LoginViewModel @Inject constructor(private val repo: MusicRepository) : Vi
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repo: MusicRepository,
-    connectivity: Connectivity,
+    private val connectivity: Connectivity,
 ) : ViewModel() {
-    val state = MutableStateFlow<Ui<Home>>(repo.cachedHome()?.let { Ui.Ok(it) } ?: Ui.Loading)
+    val state = MutableStateFlow<Ui<Home>>(Ui.Loading)
     private var loadedAt = 0L
+    private var job: Job? = null
 
     init {
-        // Em alta, artistas e mixes mudam: atualiza ao abrir e sempre que a internet volta
-        refresh()
         viewModelScope.launch {
-            var wasOnline = true
-            connectivity.online.collect { online ->
-                if (online && !wasOnline) refresh()
-                wasOnline = online
-            }
+            // Mostra a última Início salva (lida fora da Main) e já atualiza pela rede; o cache é lido
+            // antes do refresh, então nunca sobrescreve uma resposta nova
+            repo.cachedHome()?.let { if (state.value !is Ui.Ok) state.value = Ui.Ok(it) }
+            refresh()
+            // Deixa as curtidas e playlists prontas no banco local (Android Auto e modo sem internet),
+            // só depois da Início, para não disputar a rede (e a CPU) com ela
+            job?.join()
+            runCatching { repo.refreshLibrary() }
         }
-        // Deixa as curtidas e playlists prontas no banco local (Android Auto e modo sem internet)
-        viewModelScope.launch { runCatching { repo.refreshLibrary() } }
     }
 
-    fun refresh() = load(state) { repo.home().also { loadedAt = System.currentTimeMillis() } }
+    /** Em alta, artistas e mixes mudam: busca de novo (ignora se já houver uma busca em andamento). */
+    fun refresh() {
+        if (job?.isActive == true) return
+        job = load(state) {
+            // loadedAt só conta resposta da rede: a Início guardada (sem internet) é refeita quando a conexão voltar
+            try {
+                repo.fetchHome().also { loadedAt = System.currentTimeMillis() }
+            } catch (e: IOException) {
+                repo.cachedHome() ?: throw e
+            }
+        }
+    }
 
-    /** Ao voltar para a Início, atualiza se a lista tiver mais de 5 minutos. */
+    /** Ao voltar para a Início, atualiza se não houver lista da rede ou se ela tiver mais de 5 minutos. */
     fun refreshIfStale() {
-        if (loadedAt != 0L && System.currentTimeMillis() - loadedAt > 5 * 60 * 1000) refresh()
+        if (state.value !is Ui.Ok || loadedAt == 0L || System.currentTimeMillis() - loadedAt > 5 * 60_000) refresh()
+    }
+
+    /** Enquanto a Início está visível: quando a internet volta, atualiza (se a lista estiver velha). */
+    suspend fun watchReconnect() {
+        var wasOnline = true
+        connectivity.online.collect { online ->
+            if (online && !wasOnline) refreshIfStale()
+            wasOnline = online
+        }
     }
 }
 
@@ -104,24 +126,60 @@ class SearchViewModel @Inject constructor(
     val message = MutableStateFlow<String?>(null)
     private var job: Job? = null
 
-    fun onQuery(q: String) {
+    /** Resultado já buscado: voltar a um termo recente não gasta rede (nem cota do YouTube). */
+    private data class Cached(val at: Long, val result: SearchResult?, val yt: List<YtResult>)
+
+    // LRU pequeno (ordem de acesso, no máximo 20 termos); só é usado na Main, sem trava
+    private val cache = object : LinkedHashMap<String, Cached>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Cached>?) = size > 20
+    }
+
+    /** Termo (normalizado) da busca que está na tela ou em andamento. */
+    private var activeKey: String? = null
+
+    /** now: busca já, sem esperar a digitação parar e sem cache (tecla Buscar, Tentar de novo). */
+    fun onQuery(q: String, now: Boolean = false) {
         state.value = state.value.copy(query = q)
-        job?.cancel()
-        if (q.isBlank()) {
+        val key = q.trim().lowercase()
+        if (key.isEmpty()) {
+            job?.cancel()
+            activeKey = null
             state.value = SearchState()
             return
         }
+        // Só mudou espaço ou maiúscula: a busca em andamento (ou na tela) já é a deste termo
+        if (!now && key == activeKey) return
+        job?.cancel()
+        // Uma letra só não vale uma ida à rede enquanto digita
+        if (key.length < 2 && !now) {
+            activeKey = null
+            // A busca cancelada pode ter deixado o "carregando" ligado
+            state.value = state.value.copy(loading = false)
+            return
+        }
+        activeKey = key
+        val hit = cache[key]
+        if (hit != null && !now && System.currentTimeMillis() - hit.at < 10 * 60_000) {
+            state.value = state.value.copy(loading = false, result = hit.result, youtube = hit.yt, error = null)
+            return
+        }
         job = viewModelScope.launch {
-            delay(400)
+            delay(if (now) 0 else 500)
             state.value = state.value.copy(loading = true, error = null)
+            val term = q.trim()
             // O YouTube é a busca principal; do catálogo só entram álbuns e playlists
-            val catalog = async { runCatching { repo.search(q) }.getOrNull() }
+            val catalog = async { runCatching { repo.search(term) }.getOrNull() }
             try {
-                val yt = repo.youtubeSearch(q)
-                state.value = state.value.copy(loading = false, youtube = yt, result = catalog.await())
+                // Termo curto demais para o YouTube enquanto digita (cada busca gasta cota)
+                val yt = if (now || term.length >= 3) repo.youtubeSearch(term) else emptyList()
+                val r = catalog.await()
+                cache[key] = Cached(System.currentTimeMillis(), r, yt)
+                state.value = state.value.copy(loading = false, youtube = yt, result = r)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 val r = catalog.await()
+                // Sem nada para mostrar: libera o termo para que digitar de novo (ou Tentar de novo) repita a busca
+                if (r == null) activeKey = null
                 state.value = state.value.copy(loading = false, youtube = emptyList(), result = r, error = if (r == null) e.userMessage() else null)
             }
         }
@@ -160,7 +218,8 @@ class LibraryViewModel @Inject constructor(
         refresh()
     }
 
-    fun refresh() = load(state) { repo.refreshLibrary() }
+    // force: abrir a Biblioteca ou tocar em "Tentar de novo" mostra o que mudou fora do app (playlist criada no site)
+    fun refresh() = load(state) { repo.refreshLibrary(force = true) }
 
     fun logout() {
         viewModelScope.launch {
@@ -191,7 +250,29 @@ class ArtistViewModel @Inject constructor(saved: SavedStateHandle, private val r
         refresh()
     }
 
-    fun refresh() = load(state) { repo.artist(id) }
+    fun refresh() {
+        load(state) {
+            repo.artist(id).also { a -> if (a.topPending) reloadPendingTop() }
+        }
+    }
+
+    private var pendingTop: Job? = null
+
+    /**
+     * Primeira abertura do artista: o servidor ainda está buscando as 50 mais tocadas (top_pending) e respondeu só com
+     * as do catálogo. Busca de novo em silêncio, até 3 vezes, sem trocar a tela por "carregando".
+     */
+    private fun reloadPendingTop() {
+        if (pendingTop?.isActive == true) return
+        pendingTop = viewModelScope.launch {
+            repeat(3) {
+                delay(6_000)
+                val a = runCatching { repo.artist(id) }.getOrNull() ?: return@repeat
+                state.value = Ui.Ok(a)
+                if (!a.topPending) return@launch
+            }
+        }
+    }
 }
 
 /** Playlist: mostra a cópia local na hora e atualiza pela rede. */
@@ -201,6 +282,11 @@ class PlaylistViewModel @Inject constructor(saved: SavedStateHandle, private val
     val header = repo.playlist(id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val tracks = repo.playlistTracks(id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val state = MutableStateFlow<Ui<PlaylistDetail>>(Ui.Loading)
+
+    // Playlist da biblioteca abre pela cópia local; as outras (públicas) só pela rede. A lista é
+    // montada aqui uma vez por mudança, não a cada recomposição da tela
+    val playTracks: StateFlow<List<Track>> = combine(state, tracks) { s, cached -> (s as? Ui.Ok)?.data?.items?.map { it.track } ?: cached }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         refresh()
@@ -215,7 +301,8 @@ class LikedViewModel @Inject constructor(private val repo: MusicRepository) : Vi
     val state = MutableStateFlow<Ui<Library>>(Ui.Loading)
 
     init {
-        load(state) { repo.refreshLibrary() }
+        // Tela Curtidas: desce a lista de novo, mesmo com a contagem igual (curtiu uma e descurtiu outra pelo site)
+        load(state) { repo.refreshLibrary(force = true, forceLiked = true) }
     }
 }
 

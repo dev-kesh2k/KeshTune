@@ -1,9 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone da notificação: o K com ondas da marca -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <group android:translateX="-26" android:translateY="-26">
+        <path
+            android:pathData="M35.5,36.5L35.5,71.5"
+            android:strokeWidth="9"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M61,34L43,54L61,74"
+            android:strokeWidth="9"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M65.6,46.6A11,11 0,0 1,65.6 61.4"
+            android:strokeWidth="5.5"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M71.2,41.2A19,19 0,0 1,71.2 66.8"
+            android:strokeWidth="4.5"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round" />
+    </group>
 </vector>

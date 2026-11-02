@@ -68,12 +68,12 @@ class PlayerConnection @Inject constructor(
         )
     }
 
-    /** Posição e duração atuais, atualizadas a cada meio segundo enquanto alguém observa. */
+    /** Posição e duração atuais, atualizadas a cada meio segundo enquanto toca (1 s parado) e alguém observa. */
     val progress: Flow<Pair<Long, Long>> = flow {
         val c = controller.await()
         while (true) {
             emit(c.currentPosition to c.duration.coerceAtLeast(0))
-            delay(500)
+            delay(if (c.isPlaying) 500 else 1000)
         }
     }
 

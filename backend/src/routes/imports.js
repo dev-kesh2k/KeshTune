@@ -118,8 +118,11 @@ async function attachAudio(job, file) {
   }
 }
 
+// YouTube: prefere o m4a (AAC), que o -x --audio-format m4a só copia (remux, sem ffmpeg pesado nem perda). No caso
+// raro sem m4a (só Opus), recodifica para AAC: Ogg/Opus não toca no Safari (iOS antes do 17) nem no download do site.
+// Faixas que já viraram 'file' (MP3) ficam como estão: o cache de áudio do app usa a chave /api/stream/<id>.
 const jobArgs = (job, dir) => (job.kind === 'youtube'
-  ? ['-x', '--audio-format', 'mp3', '--audio-quality', '0', '--no-playlist', '--newline', '-o', path.join(dir, '%(id)s.%(ext)s'), ...TOOLS.youtube.extra, job.url]
+  ? ['-f', 'bestaudio[ext=m4a]/bestaudio', '-x', '--audio-format', 'm4a', '--no-playlist', '--newline', '-o', path.join(dir, '%(id)s.%(ext)s'), ...TOOLS.youtube.extra, job.url]
   : ['download', job.url, '--output', path.join(dir, '{artists} - {title}.{output-ext}'), '--format', 'mp3', '--simple-tui', '--print-errors', ...TOOLS.spotify.extra]);
 
 const running = new Map(); // job id -> processo filho, dos jobs rodando nesta réplica
