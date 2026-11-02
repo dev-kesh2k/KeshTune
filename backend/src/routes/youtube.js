@@ -760,9 +760,16 @@ const isYtmList = (id) => /^RDCLAK5uy_[\w-]{20,}$/.test(id);
 const isMix = (id) => /^RD[\w-]{11}$/.test(id);
 const mixCard = (vid, title, subtitle) => ({ id: `RD${vid}`, title, subtitle, image_url: thumb(vid) });
 const listUrl = (id) => (isMix(id) ? `https://www.youtube.com/watch?v=${id.slice(2)}&list=${id}` : `https://www.youtube.com/playlist?list=${id}`);
+/**
+ * Capa da playlist. A maior (maxresdefault, sem assinatura) dá 404: fica a assinada mais perto de 640 px. Sem ela,
+ * a capa da primeira música.
+ */
 const bestThumb = (j) => {
-  const u = (j.thumbnails || []).slice(-1)[0]?.url || null;
-  return u && /^https:\/\/i\d*\.ytimg\.com\//.test(u) ? u : null;
+  const ok = (t) => t?.url && /^https:\/\/i\d*\.ytimg\.com\//.test(t.url) && !/\/maxresdefault\.jpg$/.test(t.url);
+  const signed = (j.thumbnails || []).filter(ok).sort((a, b) => Math.abs((a.width || 0) - 640) - Math.abs((b.width || 0) - 640))[0];
+  if (signed) return signed.url;
+  const first = (j.entries || []).find((x) => /^[\w-]{11}$/.test(x.id || ''));
+  return first ? thumb(first.id) : null;
 };
 
 /** Título e capa de uma playlist do YouTube Music (lê só o cabeçalho). */
