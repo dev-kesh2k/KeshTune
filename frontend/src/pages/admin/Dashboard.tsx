@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom';
-import { UserPlus } from 'lucide-react';
 import { fmtBytes, fmtDate } from '../../lib/format';
 import { useFetch } from '../../lib/useFetch';
 import { ErrorBox, PageLoading } from '../../components/ui';
@@ -18,10 +17,6 @@ export default function Dashboard() {
   const max = Math.max(1, ...data.daily.map((d) => d.plays));
   return (
     <div className="space-y-6 pb-6">
-      <div className="flex flex-wrap gap-2">
-        <Link to="/admin/users?novo=1" className="btn-primary"><UserPlus className="h-4 w-4" /> Criar usuário</Link>
-        <Link to="/admin/users" className="btn-secondary">Ver usuários</Link>
-      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <StatCard label="Reproduções hoje" value={data.plays_today.toLocaleString('pt-BR')} hint={`${data.plays_30d.toLocaleString('pt-BR')} em 30 dias`} />
         <StatCard label="Contas" value={data.users} hint={`${data.active_users_30d} ativas · ${data.blocked_users} bloqueadas`} />

@@ -13,9 +13,7 @@ const esc = (s) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
 // score: prefixo > contém > similaridade (tolerância a erros de digitação, pg_trgm)
 const scoreSql = (col) => `(CASE WHEN f_norm(${col}) LIKE $2 THEN 2 WHEN f_norm(${col}) LIKE $3 THEN 1 ELSE 0 END
   + GREATEST(similarity(f_norm(${col}), $1), word_similarity($1, f_norm(${col}))))`;
-// Operadores (<% = word_similarity, % = similarity) em vez das funções: assim o índice GIN de trigramas é usado.
-// Os limites (0,45 e 0,3) são definidos em cada conexão (db.js).
-const matchSql = (col) => `(f_norm(${col}) LIKE $3 OR $1 <% f_norm(${col}) OR f_norm(${col}) % $1)`;
+const matchSql = (col) => `(f_norm(${col}) LIKE $3 OR word_similarity($1, f_norm(${col})) > 0.45 OR similarity(f_norm(${col}), $1) > 0.3)`;
 
 function normalize(s) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -26,15 +24,12 @@ async function runSearch(user, raw, types, limit) {
   const p = [nq, `${esc(nq)}%`, `%${esc(nq)}%`];
   const out = {};
   if (types.includes('track')) {
-    // Candidatos pelo índice (título ou artista); a nota só é calculada para eles
     const rows = await q(
-      `WITH ma AS (SELECT a.id FROM artists a WHERE ${matchSql('a.name')}),
-            cand AS (SELECT t.id FROM tracks t WHERE ${matchSql('t.title')}
-                     UNION SELECT ta.track_id FROM track_artists ta JOIN ma ON ma.id = ta.artist_id)
-       SELECT t.id, GREATEST(${scoreSql('t.title')},
+      `SELECT t.id, GREATEST(${scoreSql('t.title')},
               COALESCE((SELECT max(${scoreSql('a.name')}) * 0.8 FROM track_artists ta JOIN artists a ON a.id = ta.artist_id WHERE ta.track_id = t.id), 0)) AS score
-         FROM cand JOIN tracks t ON t.id = cand.id
-        WHERE t.status = 'active'
+         FROM tracks t
+        WHERE t.status = 'active' AND (${matchSql('t.title')}
+              OR EXISTS (SELECT 1 FROM track_artists ta JOIN artists a ON a.id = ta.artist_id WHERE ta.track_id = t.id AND ${matchSql('a.name')}))
         ORDER BY score DESC, t.popularity DESC LIMIT ${limit}`,
       p
     );
@@ -81,19 +76,14 @@ searchRouter.get('/search', ah(async (req, res) => {
   // "Você quis dizer...": termo mais parecido do catálogo quando há poucos resultados
   let did_you_mean = null;
   if (total < 3 && raw.length >= 3) {
-    // Só sugere quando o termo não aparece em nada do catálogo (o filtro escolhido pode só não ter resultado).
-    // Candidatos pelo operador % (índice de trigramas) em vez de calcular a similaridade com tudo.
     const nq = normalize(raw);
     const best = await q(
-      `SELECT name FROM (
-         (SELECT title AS name, similarity(f_norm(title), $1) AS sim FROM tracks WHERE status = 'active' AND f_norm(title) % $1 ORDER BY sim DESC LIMIT 1)
-         UNION ALL (SELECT name, similarity(f_norm(name), $1) FROM artists WHERE f_norm(name) % $1 ORDER BY 2 DESC LIMIT 1)
-         UNION ALL (SELECT title, similarity(f_norm(title), $1) FROM albums WHERE f_norm(title) % $1 ORDER BY 2 DESC LIMIT 1)) x
-        WHERE f_norm(name) <> $1
-          AND NOT EXISTS (SELECT 1 FROM tracks WHERE status = 'active' AND f_norm(title) LIKE $2)
-          AND NOT EXISTS (SELECT 1 FROM artists WHERE f_norm(name) LIKE $2)
-        ORDER BY sim DESC LIMIT 1`,
-      [nq, `%${esc(nq)}%`]
+      `SELECT name, sim FROM (
+         SELECT title AS name, similarity(f_norm(title), $1) AS sim FROM tracks WHERE status = 'active'
+         UNION ALL SELECT name, similarity(f_norm(name), $1) FROM artists
+         UNION ALL SELECT title, similarity(f_norm(title), $1) FROM albums) x
+        WHERE sim > 0.15 AND f_norm(name) <> $1 ORDER BY sim DESC LIMIT 1`,
+      [nq]
     );
     did_you_mean = best[0]?.name || null;
   }

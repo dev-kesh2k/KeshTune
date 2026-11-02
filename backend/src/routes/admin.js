@@ -215,7 +215,7 @@ const audioUpload = multer({
   limits: { fileSize: 80 * 1024 * 1024, files: 1 },
 });
 const CONTAINER_MIME = { MPEG: 'audio/mpeg', 'MPEG-4': 'audio/mp4', Ogg: 'audio/ogg', WAVE: 'audio/wav', FLAC: 'audio/flac', 'EBML/webm': 'audio/webm', 'EBML/matroska': 'audio/webm' };
-export const MIME_EXT = { 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/flac': 'flac', 'audio/webm': 'webm' };
+const MIME_EXT = { 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/flac': 'flac', 'audio/webm': 'webm' };
 
 setInterval(() => {
   try {
@@ -226,21 +226,18 @@ setInterval(() => {
   } catch { /* */ }
 }, 3600 * 1000).unref();
 
-/**
- * Lê os metadados de um áudio já gravado em TMP_DIR (nome = upload_id) e grava o .json ao lado,
- * deixando-o pronto para createTrack. Apaga o arquivo se for inválido.
- */
-export async function probeAudio(file) {
+adminRouter.post('/admin/uploads/audio', audioUpload.single('file'), ah2(async (req, res) => {
+  if (!req.file) throw bad('Envie o arquivo de áudio no campo "file"');
   let meta;
   try {
-    meta = await parseFile(file.path, { duration: true, skipCovers: false });
+    meta = await parseFile(req.file.path, { duration: true, skipCovers: false });
   } catch {
-    fs.rmSync(file.path, { force: true });
+    fs.rmSync(req.file.path, { force: true });
     throw bad('Arquivo de áudio inválido ou corrompido');
   }
   const mime = CONTAINER_MIME[meta.format.container] || (meta.format.container?.includes('M4A') || meta.format.container?.includes('isom') ? 'audio/mp4' : null);
   if (!mime || !meta.format.duration) {
-    fs.rmSync(file.path, { force: true });
+    fs.rmSync(req.file.path, { force: true });
     throw bad(`Formato não suportado (${meta.format.container || 'desconhecido'}). Use MP3, AAC/M4A, OGG/Opus, FLAC ou WAV.`);
   }
   const c = meta.common;
@@ -253,12 +250,12 @@ export async function probeAudio(file) {
     ? c.lyrics.map((l) => (typeof l === 'string' ? l : l.text || (l.syncText || []).map((s) => s.text).join('\n'))).filter(Boolean).join('\n')
     : null;
   const info = {
-    upload_id: file.filename,
-    original_name: file.originalname,
+    upload_id: req.file.filename,
+    original_name: req.file.originalname,
     mime,
-    size: file.size,
+    size: req.file.size,
     meta: {
-      title: c.title || file.originalname.replace(/\.[^.]+$/, ''),
+      title: c.title || req.file.originalname.replace(/\.[^.]+$/, ''),
       artists: c.artists?.length ? c.artists : c.artist ? [c.artist] : [],
       album: c.album || null,
       album_artist: c.albumartist || null,
@@ -276,13 +273,8 @@ export async function probeAudio(file) {
       cover_url,
     },
   };
-  fs.writeFileSync(`${file.path}.json`, JSON.stringify({ mime, size: file.size, bitrate_kbps: info.meta.bitrate_kbps, duration_ms: info.meta.duration_ms }));
-  return info;
-}
-
-adminRouter.post('/admin/uploads/audio', audioUpload.single('file'), ah2(async (req, res) => {
-  if (!req.file) throw bad('Envie o arquivo de áudio no campo "file"');
-  res.status(201).json(await probeAudio(req.file));
+  fs.writeFileSync(`${req.file.path}.json`, JSON.stringify({ mime, size: req.file.size, bitrate_kbps: info.meta.bitrate_kbps, duration_ms: info.meta.duration_ms }));
+  res.status(201).json(info);
 }));
 
 function youtubeId(url) {
@@ -419,8 +411,110 @@ adminRouter.get('/admin/tracks/:id', ah2(async (req, res) => {
   res.json(t);
 }));
 
-/** Cria a faixa (arquivo já enviado via probeAudio, ou YouTube) com créditos e álbum. Devolve o id. */
-export async function createTrack(b, userId) {
+// ---------------- Importar playlist do YouTube ----------------
+function ytPlaylistId(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/[?&]list=([\w-]{10,})/);
+  if (m) return m[1];
+  return /^[\w-]{10,}$/.test(s) ? s : null;
+}
+async function ytApi(pathname, params) {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) throw bad('Chave da API do YouTube não configurada (YOUTUBE_API_KEY)');
+  const url = `https://www.googleapis.com/youtube/v3/${pathname}?${new URLSearchParams({ ...params, key })}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw bad(`YouTube: ${j?.error?.message || r.status}`);
+  return j;
+}
+const ytNoise = /\s*[([][^)\]]*(official|oficial|video|vídeo|lyric|letra|audio|áudio|clipe|live|ao vivo|hd|remaster|visualizer|4k)[^)\]]*[)\]]/gi;
+const ytClean = (t) => String(t || '').replace(ytNoise, '').replace(/\s+/g, ' ').trim().replace(/^[-–|\s]+|[-–|\s]+$/g, '');
+function ytIsoMs(d) {
+  const m = String(d || '').match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  return m ? (((+m[1] || 0) * 60 + (+m[2] || 0)) * 60 + (+m[3] || 0)) * 1000 : 0;
+}
+
+adminRouter.post('/admin/youtube/import-playlist', ah2(async (req, res) => {
+  const b = req.body || {};
+  const s = await getSettings();
+  if (!s.youtube_enabled) throw bad('Faixas do YouTube estão desativadas nas configurações');
+  const listId = ytPlaylistId(b.url);
+  if (!listId) throw bad('Link de playlist do YouTube inválido');
+  const genreId = b.genre_id ? int(b.genre_id, 'Gênero', { min: 1 }) : null;
+  if (genreId && !(await one(`SELECT 1 FROM genres WHERE id = $1`, [genreId]))) throw bad('Gênero não encontrado');
+  const max = Math.min(int(b.max, 'Máximo', { min: 1, max: 500 }) || 200, 500);
+
+  const meta = (await ytApi('playlists', { part: 'snippet', id: listId })).items?.[0];
+  if (!meta) throw bad('Playlist não encontrada ou privada');
+  const name = str(b.name, 'Nome', { max: 100 }) || String(meta.snippet.title || 'Playlist do YouTube').slice(0, 100);
+
+  const ids = [];
+  const base = new Map();
+  let token;
+  while (ids.length < max) {
+    const d = await ytApi('playlistItems', { part: 'snippet', playlistId: listId, maxResults: '50', ...(token ? { pageToken: token } : {}) });
+    for (const it of d.items || []) {
+      const vid = it.snippet?.resourceId?.videoId;
+      if (!vid || /^(Private|Deleted) video$/.test(it.snippet.title) || base.has(vid)) continue;
+      base.set(vid, { title: it.snippet.title, channel: it.snippet.videoOwnerChannelTitle || '' });
+      ids.push(vid);
+      if (ids.length >= max) break;
+    }
+    token = d.nextPageToken;
+    if (!token) break;
+  }
+  if (!ids.length) throw bad('A playlist não tem vídeos disponíveis');
+
+  const info = new Map();
+  for (let i = 0; i < ids.length; i += 50) {
+    const d = await ytApi('videos', { part: 'statistics,contentDetails,status', id: ids.slice(i, i + 50).join(',') });
+    for (const v of d.items || []) {
+      if (v.status?.embeddable === false) continue;
+      info.set(v.id, { views: Number(v.statistics?.viewCount || 0), ms: ytIsoMs(v.contentDetails?.duration) });
+    }
+  }
+
+  const out = await tx(async (db) => {
+    const plId = uuidv7();
+    await db.q(`INSERT INTO playlists (id, owner_id, name, description, visibility, share_token) VALUES ($1,$2,$3,$4,'public',$5)`,
+      [plId, req.user.id, name, 'Importada do YouTube', crypto.randomBytes(16).toString('hex')]);
+    let created = 0;
+    let pos = 0;
+    for (const vid of ids) {
+      if (!info.has(vid)) continue;
+      const bt = base.get(vid);
+      const topic = / - Topic$/.test(bt.channel);
+      const m = !topic && bt.title.match(/^(.{2,60}?)\s+[-–]\s+(.{2,100})$/);
+      const artist = (topic ? bt.channel.slice(0, -8) : m ? ytClean(m[1]) : bt.channel.replace(/\s*VEVO$/i, '')).trim().slice(0, 200) || 'Artista desconhecido';
+      const title = (m ? ytClean(m[2]) : ytClean(bt.title)).slice(0, 200) || bt.title.slice(0, 200);
+      let tr = await db.one(`SELECT id FROM tracks WHERE youtube_id = $1 LIMIT 1`, [vid]);
+      if (!tr) {
+        const iv = info.get(vid);
+        const tid = uuidv7();
+        await db.q(
+          `INSERT INTO tracks (id, title, source, youtube_id, status, cover_url, duration_ms, popularity, created_by)
+           VALUES ($1,$2,'youtube',$3,'active',$4,$5,$6,$7)`,
+          [tid, title, vid, `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`, iv.ms, Math.min(1000, Math.round(100 * Math.log10(iv.views + 1))), req.user.id]
+        );
+        let ar = await db.one(`SELECT id FROM artists WHERE name = $1 LIMIT 1`, [artist]);
+        if (!ar) { ar = { id: uuidv7() }; await db.q(`INSERT INTO artists (id, name) VALUES ($1,$2)`, [ar.id, artist]); }
+        await db.q(`INSERT INTO track_artists (track_id, artist_id, role, position) VALUES ($1,$2,'main',0)`, [tid, ar.id]);
+        await db.q(`UPDATE artists SET image_url = $2 WHERE id = $1 AND image_url IS NULL`, [ar.id, `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`]);
+        tr = { id: tid };
+        created++;
+      }
+      if (genreId) await db.q(`INSERT INTO track_genres (track_id, genre_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [tr.id, genreId]);
+      pos++;
+      await db.q(`INSERT INTO playlist_items (id, playlist_id, position, track_id, added_by) VALUES ($1,$2,$3,$4,$5)`, [uuidv7(), plId, pos * 1000, tr.id, req.user.id]);
+    }
+    return { playlist_id: plId, name, total: pos, created, skipped: ids.length - pos };
+  });
+  await audit(req, 'admin.youtube_import_playlist', 'playlist', out.playlist_id, { name, total: out.total, list: listId });
+  res.status(201).json(out);
+}));
+
+adminRouter.post('/admin/tracks', ah2(async (req, res) => {
+  const b = req.body || {};
   const source = oneOf(b.source, 'Fonte', ['file', 'youtube']);
   const f = trackFields(b);
   let file = null;
@@ -452,7 +546,7 @@ export async function createTrack(b, userId) {
                            audio_size, checksum, bitrate_kbps, duration_ms, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [id, f.title, f.isrc, f.explicit, f.track_number, f.disc_number, f.lyrics, f.cover_url, source, ytId, audioName, file?.mime || null,
-        file?.size || null, checksum, file?.bitrate_kbps || null, file ? file.duration_ms : int(b.duration_ms, 'Duração', { min: 0 }) || 0, userId]
+        file?.size || null, checksum, file?.bitrate_kbps || null, file ? file.duration_ms : int(b.duration_ms, 'Duração', { min: 0 }) || 0, req.user.id]
     );
     const main = await saveTrackRelations(db, id, b);
     const albumId = await resolveAlbum(db, b, main);
@@ -462,12 +556,7 @@ export async function createTrack(b, userId) {
       fs.rmSync(path.join(TMP_DIR, `${file.id}.json`), { force: true });
     }
   });
-  return { id, title: f.title, source };
-}
-
-adminRouter.post('/admin/tracks', ah2(async (req, res) => {
-  const { id, title, source } = await createTrack(req.body || {}, req.user.id);
-  await audit(req, 'admin.track_create', 'track', id, { title, source });
+  await audit(req, 'admin.track_create', 'track', id, { title: f.title, source });
   res.status(201).json(await one(`${ADMIN_TRACK_SQL} WHERE t.id = $1`, [id]));
 }));
 

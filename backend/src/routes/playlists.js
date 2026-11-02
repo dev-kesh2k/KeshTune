@@ -346,42 +346,6 @@ async function insertItems(db, id, trackIds, userId, where) {
   await db.q(`INSERT INTO playlist_items (id, playlist_id, position, track_id, added_by) VALUES ${values.join(',')}`, params);
 }
 
-/** Cria uma playlist privada do usuário já com as faixas (ex.: importada do YouTube). Devolve o id. */
-export async function createPlaylistWithTracks(user, { name, description }, trackIds) {
-  const id = await tx(async (db) => {
-    const pid = await createPlaylist(db, user, { name, description, visibility: 'private', is_collaborative: false });
-    if (trackIds.length) await insertItems(db, pid, trackIds, user.id, 'end');
-    return pid;
-  });
-  await emit('library.changed', { type: 'playlist' }, [user.id]);
-  return id;
-}
-
-/** Coloca faixas baixadas na playlist "Minhas músicas" do usuário (criada no primeiro download), mais recentes no topo. */
-export async function addToMyMusic(user, trackIds) {
-  const ids = [...new Set(trackIds)];
-  if (!ids.length) return;
-  const r = await tx(async (db) => {
-    await db.q(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`my_music:${user.id}`]);
-    let p = await db.one(
-      `SELECT id FROM playlists WHERE owner_id = $1 AND system_key = 'my_music' AND deleted_at IS NULL ORDER BY created_at LIMIT 1`,
-      [user.id]
-    );
-    const isNew = !p;
-    if (!p) {
-      p = { id: await createPlaylist(db, user, { name: 'Minhas músicas', description: 'Músicas que você baixou', visibility: 'private', is_collaborative: false }) };
-      await db.q(`UPDATE playlists SET system_key = 'my_music' WHERE id = $1`, [p.id]);
-    }
-    const have = new Set((await db.q(`SELECT track_id FROM playlist_items WHERE playlist_id = $1 AND track_id = ANY($2::uuid[])`, [p.id, ids])).map((x) => x.track_id));
-    const toAdd = ids.filter((t) => !have.has(t));
-    if (!toAdd.length) return { id: p.id, isNew, snap: null };
-    await insertItems(db, p.id, toAdd, user.id, 'start');
-    return { id: p.id, isNew, snap: await bump(db, p.id, toAdd.length) };
-  });
-  if (r.isNew) await emit('library.changed', { type: 'playlist' }, [user.id]);
-  if (r.snap) await notifyUpdate(r.id, r.snap);
-}
-
 playlistsRouter.post('/playlists/:id/items', editLimit, ah(async (req, res) => {
   const id = uuidParam(req.params.id);
   await access(id, req.user, { forEdit: true });
@@ -534,24 +498,13 @@ playlistsRouter.get('/playlists/:id/suggestions', ah(async (req, res) => {
   const rows = await q(
     `WITH cur AS (SELECT track_id FROM playlist_items WHERE playlist_id = $1),
           ar AS (SELECT ta.artist_id, count(*) n FROM track_artists ta JOIN cur ON cur.track_id = ta.track_id GROUP BY 1),
-          ge AS (SELECT tg.genre_id, count(*) n FROM track_genres tg JOIN cur ON cur.track_id = tg.track_id GROUP BY 1),
-          -- só faixas dos mesmos artistas/gêneros recebem nota (antes: duas subconsultas para cada faixa do catálogo)
-          cand AS (SELECT ta.track_id AS id, ar.n * 2 AS s FROM track_artists ta JOIN ar ON ar.artist_id = ta.artist_id
-                   UNION ALL SELECT tg.track_id, ge.n FROM track_genres tg JOIN ge ON ge.genre_id = tg.genre_id)
-     SELECT t.id FROM cand c JOIN tracks t ON t.id = c.id
-      WHERE t.status = 'active' AND t.id NOT IN (SELECT track_id FROM cur)
-      GROUP BY t.id, t.popularity
-      ORDER BY sum(c.s) DESC, t.popularity DESC, random() LIMIT 10`,
+          ge AS (SELECT tg.genre_id, count(*) n FROM track_genres tg JOIN cur ON cur.track_id = tg.track_id GROUP BY 1)
+     SELECT t.id, COALESCE((SELECT sum(ar.n) * 2 FROM track_artists ta JOIN ar ON ar.artist_id = ta.artist_id WHERE ta.track_id = t.id), 0)
+                + COALESCE((SELECT sum(ge.n) FROM track_genres tg JOIN ge ON ge.genre_id = tg.genre_id WHERE tg.track_id = t.id), 0) AS score
+       FROM tracks t WHERE t.status = 'active' AND t.id NOT IN (SELECT track_id FROM cur)
+      ORDER BY score DESC, t.popularity DESC, random() LIMIT 10`,
     [id]
   );
-  if (rows.length < 10) {
-    rows.push(...(await q(
-      `SELECT id FROM tracks WHERE status = 'active' AND NOT (id = ANY($2::uuid[]))
-          AND id NOT IN (SELECT track_id FROM playlist_items WHERE playlist_id = $1)
-        ORDER BY popularity DESC, created_at DESC LIMIT $3`,
-      [id, rows.map((r) => r.id), 10 - rows.length]
-    )));
-  }
   res.json({ items: (await hydrateTracks(rows.map((r) => r.id), req.user)).filter((t) => t.playable) });
 }));
 

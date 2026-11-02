@@ -1,4 +1,4 @@
-import { lazy, useCallback } from 'react';
+import { useCallback } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { PlayerProvider } from './lib/player';
@@ -10,33 +10,24 @@ import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
 import Home from './pages/Home';
 import Search from './pages/Search';
-
-// Telas carregadas sob demanda (o pacote inicial leva só Início, Busca e Login)
-const Library = lazy(() => import('./pages/Library'));
-const Liked = lazy(() => import('./pages/Liked'));
-const Playlist = lazy(() => import('./pages/Playlist'));
-const Album = lazy(() => import('./pages/Album'));
-const Artist = lazy(() => import('./pages/Artist'));
-const Track = lazy(() => import('./pages/Track'));
-const Genre = lazy(() => import('./pages/Genre'));
-const UserProfile = lazy(() => import('./pages/UserProfile'));
-const Settings = lazy(() => import('./pages/Settings'));
-const Downloads = lazy(() => import('./pages/Downloads'));
-const Trash = lazy(() => import('./pages/Trash'));
-const Invite = lazy(() => import('./pages/Links').then((m) => ({ default: m.Invite })));
-const SharedLink = lazy(() => import('./pages/Links').then((m) => ({ default: m.SharedLink })));
-const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
-const Dashboard = lazy(() => import('./pages/admin/Dashboard'));
-const Users = lazy(() => import('./pages/admin/Users'));
-const Tracks = lazy(() => import('./pages/admin/Tracks'));
-const Imports = lazy(() => import('./pages/admin/Imports'));
-const Albums = lazy(() => import('./pages/admin/Catalog').then((m) => ({ default: m.Albums })));
-const Artists = lazy(() => import('./pages/admin/Catalog').then((m) => ({ default: m.Artists })));
-const Genres = lazy(() => import('./pages/admin/Catalog').then((m) => ({ default: m.Genres })));
-const AdminSettings = lazy(() => import('./pages/admin/Ops').then((m) => ({ default: m.AdminSettings })));
-const Audit = lazy(() => import('./pages/admin/Ops').then((m) => ({ default: m.Audit })));
-const Moderation = lazy(() => import('./pages/admin/Ops').then((m) => ({ default: m.Moderation })));
-const Reports = lazy(() => import('./pages/admin/Ops').then((m) => ({ default: m.Reports })));
+import Library from './pages/Library';
+import Liked from './pages/Liked';
+import Playlist from './pages/Playlist';
+import Album from './pages/Album';
+import Artist from './pages/Artist';
+import Track from './pages/Track';
+import Genre from './pages/Genre';
+import UserProfile from './pages/UserProfile';
+import Settings from './pages/Settings';
+import Downloads from './pages/Downloads';
+import Trash from './pages/Trash';
+import { Invite, SharedLink } from './pages/Links';
+import AdminLayout from './pages/admin/AdminLayout';
+import Dashboard from './pages/admin/Dashboard';
+import Users from './pages/admin/Users';
+import Tracks from './pages/admin/Tracks';
+import { Albums, Artists, Genres } from './pages/admin/Catalog';
+import { AdminSettings, Audit, Moderation, Reports } from './pages/admin/Ops';
 
 function Authed() {
   const toast = useToast();
@@ -67,7 +58,6 @@ function Authed() {
                 <Route index element={<Dashboard />} />
                 <Route path="users" element={<Users />} />
                 <Route path="tracks" element={<Tracks />} />
-                <Route path="imports" element={<Imports />} />
                 <Route path="artists" element={<Artists />} />
                 <Route path="albums" element={<Albums />} />
                 <Route path="genres" element={<Genres />} />
