@@ -80,7 +80,7 @@ export default function Artist() {
       </PlayActions>
       <div className={pagePad}>
         {data.top_tracks.length ? (
-          <Section title="Populares">
+          <Section title={`As ${data.top_tracks.length} mais tocadas`}>
             <TrackList tracks={showAll ? data.top_tracks : data.top_tracks.slice(0, 5)} numbered onPlay={(i) => player.playTracks(data.top_tracks, i, ctx)} />
             {data.top_tracks.length > 5 && (
               <button className="mt-2 min-h-11 px-3 text-sm font-semibold text-muted hover:text-white" onClick={() => setShowAll(!showAll)}>

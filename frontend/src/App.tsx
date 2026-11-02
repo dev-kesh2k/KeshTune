@@ -22,6 +22,9 @@ const Genre = lazy(() => import('./pages/Genre'));
 const UserProfile = lazy(() => import('./pages/UserProfile'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Downloads = lazy(() => import('./pages/Downloads'));
+const DownloadGroup = lazy(() => import('./pages/DownloadGroup'));
+const Mixes = lazy(() => import('./pages/Mixes'));
+const Mix = lazy(() => import('./pages/Mix'));
 const Trash = lazy(() => import('./pages/Trash'));
 const Invite = lazy(() => import('./pages/Links').then((m) => ({ default: m.Invite })));
 const SharedLink = lazy(() => import('./pages/Links').then((m) => ({ default: m.SharedLink })));
@@ -53,6 +56,9 @@ function Authed() {
             <Route path="library/trash" element={<Trash />} />
             <Route path="liked" element={<Liked />} />
             <Route path="downloads" element={<Downloads />} />
+            <Route path="downloads/:id" element={<DownloadGroup />} />
+            <Route path="mixes" element={<Mixes />} />
+            <Route path="mix/:id" element={<Mix />} />
             <Route path="playlist/:id" element={<Playlist />} />
             <Route path="album/:id" element={<Album />} />
             <Route path="artist/:id" element={<Artist />} />
