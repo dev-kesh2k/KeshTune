@@ -1,14 +1,14 @@
 name: Deploy
 
-# main -> produção (/spotify-x/) · dev -> ambiente de testes (/spotify-x-dev/)
+# main -> produção (/keshtune/) · dev -> ambiente de testes (/keshtune-dev/)
 on:
   push:
     branches: [main, dev]
   workflow_dispatch:
 
 env:
-  SLUG: ${{ github.ref_name == 'main' && 'spotify-x' || 'spotify-x-dev' }}
-  APP_NAME: ${{ github.ref_name == 'main' && 'Spotify X' || 'Spotify X Dev' }}
+  SLUG: ${{ github.ref_name == 'main' && 'keshtune' || 'keshtune-dev' }}
+  APP_NAME: ${{ github.ref_name == 'main' && 'KeshTune' || 'KeshTune Dev' }}
 
 concurrency:
   group: deploy-${{ github.ref_name }}
