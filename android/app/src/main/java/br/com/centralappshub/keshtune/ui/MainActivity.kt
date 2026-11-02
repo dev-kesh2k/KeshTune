@@ -32,7 +32,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -105,7 +105,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab("home", "Início", Icons.Default.Home),
-    Tab("mixes", "Mixes", Icons.Default.Album),
+    Tab("mixes", "Mixes", Icons.AutoMirrored.Filled.QueueMusic),
     Tab("search", "Buscar", Icons.Default.Search),
     Tab("library", "Biblioteca", Icons.Default.LibraryMusic),
 )
