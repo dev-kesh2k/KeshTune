@@ -9,16 +9,17 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { artistNames, fmtTime } from '../lib/format';
-import { usePlayer, type QItem } from '../lib/player';
-import { useUi } from './TrackActions';
+import { usePlayer, usePlayerPosition, type QItem } from '../lib/player';
+import { DownloadButton, useUi } from './TrackActions';
 import { Explicit } from './TrackList';
 import { Cover, Sheet, Spinner, Toggle } from './ui';
 
 export function ProgressBar({ compact }: { compact?: boolean }) {
   const p = usePlayer();
+  const position = usePlayerPosition();
   const [drag, setDrag] = useState<number | null>(null);
   const dur = p.duration || 0;
-  const val = drag ?? Math.min(p.position, dur);
+  const val = drag ?? Math.min(position, dur);
   const pct = dur ? (val / dur) * 100 : 0;
   return (
     <div className="flex w-full min-w-0 items-center gap-2 text-[11px] tabular-nums text-muted">
@@ -153,6 +154,7 @@ export function PlayerBar({ onOpenQueue, onOpenLyrics, onOpenNow }: { onOpenQueu
               </p>
             </div>
             <LikeButton />
+            <DownloadButton track={t} />
           </>
         ) : (
           <p className="text-sm text-muted">Escolha uma música para tocar</p>
@@ -179,12 +181,22 @@ export function PlayerBar({ onOpenQueue, onOpenLyrics, onOpenNow }: { onOpenQueu
   );
 }
 
+/** Barrinha de progresso do mini player: só ela acompanha a posição (o resto do mini player não se redesenha). */
+function MiniProgress({ duration }: { duration: number }) {
+  const position = usePlayerPosition();
+  const pct = duration ? Math.min(100, (position / duration) * 100) : 0;
+  return (
+    <div className="h-[3px] bg-white/15">
+      <div className="h-full bg-white" style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
 /** Mini player no celular (acima da barra inferior). */
 export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
   const p = usePlayer();
   const t = p.current?.track;
   if (!t) return null;
-  const pct = p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
   return (
     <div className="mx-2 mb-1 overflow-hidden rounded-xl bg-[#2a2140] shadow-2xl lg:hidden">
       <div className="flex items-center gap-2 py-1.5 pl-1.5 pr-1">
@@ -200,13 +212,12 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
           </span>
         </button>
         <LikeButton />
+        <DownloadButton track={t} className="max-[359px]:hidden" />
         <button className="icon-btn" aria-label={p.playing ? 'Pausar' : 'Tocar'} onClick={p.toggle}>
           {p.loading ? <Loader2 className="h-6 w-6 animate-spin" /> : p.playing ? <Pause className="h-6 w-6 fill-white" /> : <Play className="h-6 w-6 fill-white" />}
         </button>
       </div>
-      <div className="h-[3px] bg-white/15">
-        <div className="h-full bg-white" style={{ width: `${pct}%` }} />
-      </div>
+      <MiniProgress duration={p.duration} />
     </div>
   );
 }
@@ -222,6 +233,31 @@ export function NowPlaying({ open, onClose, onOpenQueue, onOpenLyrics }: { open:
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [open, onClose]);
+
+  // O player do YouTube vive no Layout; aqui só avisamos onde ele deve ficar (clipe grande ou janelinha sobre a capa)
+  const slot = useRef<HTMLDivElement>(null);
+  const isYT = t?.source === 'youtube';
+  useEffect(() => {
+    const el = slot.current;
+    if (!open || !isYT || !el) return;
+    const send = () => {
+      const r = el.getBoundingClientRect();
+      window.dispatchEvent(new CustomEvent('spx:video-slot', { detail: { top: r.top, left: r.left, width: r.width, height: r.height } }));
+    };
+    send();
+    const ro = new ResizeObserver(send);
+    ro.observe(el);
+    const scroller = el.closest('[role="dialog"]');
+    scroller?.addEventListener('scroll', send);
+    window.addEventListener('resize', send);
+    return () => {
+      ro.disconnect();
+      scroller?.removeEventListener('scroll', send);
+      window.removeEventListener('resize', send);
+      window.dispatchEvent(new CustomEvent('spx:video-slot', { detail: null }));
+    };
+  }, [open, isYT, p.videoMode, t?.id]);
+
   if (!open || !t) return null;
   return (
     <div className="fixed inset-0 z-[60] flex flex-col overflow-y-auto bg-gradient-to-b from-[#3b2a6b] via-[#16121f] to-bg" role="dialog" aria-label="Tocando agora">
@@ -239,22 +275,37 @@ export function NowPlaying({ open, onClose, onOpenQueue, onOpenLyrics }: { open:
           </button>
         </div>
         {t.source === 'youtube' && (
-          <div className="mx-auto mt-3 flex rounded-full bg-white/10 p-1 text-sm font-semibold" role="tablist" aria-label="Música ou vídeo">
-            {([['Música', false], ['Vídeo', true]] as const).map(([label, v]) => (
-              <button key={label} role="tab" aria-selected={p.videoMode === v} onClick={() => p.setVideoMode(v)}
-                className={`rounded-full px-5 py-1.5 transition ${p.videoMode === v ? 'bg-white text-black' : 'text-white/70'}`}>{label}</button>
-            ))}
+          <div className="mt-3 flex justify-center" role="group" aria-label="Modo de exibição">
+            <div className="flex rounded-full bg-white/10 p-1">
+              {([['audio', 'Música'], ['video', 'Clipe']] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  className={`min-h-9 rounded-full px-4 text-sm font-semibold transition ${p.videoMode === m ? 'bg-white text-black' : 'text-white/80 hover:text-white'}`}
+                  aria-pressed={p.videoMode === m}
+                  onClick={() => p.setVideoMode(m)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         <div className="flex flex-1 items-center justify-center py-6">
-          {t.source === 'youtube' && p.videoMode ? (
-            <div className="aspect-video w-full" aria-hidden /> /* o player do YouTube flutua sobre este espaço */
-          ) : t.source === 'youtube' ? (
-            <div className="relative aspect-square w-full max-w-[min(100%,26rem,52dvh)] overflow-hidden rounded-md bg-surface2 shadow-2xl">
-              <img src={`https://i.ytimg.com/vi/${t.youtube_id}/hqdefault.jpg`} alt={t.title} className="absolute inset-0 h-full w-full scale-[1.34] object-cover" />
-            </div>
+          {isYT && p.videoMode === 'video' ? (
+            <div ref={slot} className="aspect-video w-full" aria-hidden /> /* o player do YouTube flutua sobre este espaço */
           ) : (
-            <Cover url={t.cover_url} alt={t.title} className="w-full max-w-[min(100%,26rem,52dvh)] shadow-2xl" />
+            <div className="relative w-full max-w-[min(100%,26rem,52dvh)]">
+              {isYT && t.cover_url?.startsWith('https://i.ytimg.com/') ? (
+                // A miniatura do YouTube (4:3) vem com faixas pretas embutidas: amplia para mostrar só a imagem
+                <div className="aspect-square w-full overflow-hidden rounded-md bg-surface2 shadow-2xl">
+                  <img src={t.cover_url} alt={t.title} className="h-full w-full scale-[1.34] object-cover" />
+                </div>
+              ) : (
+                <Cover url={t.cover_url} alt={t.title} className="w-full shadow-2xl" />
+              )}
+              {/* Modo "Música": o player do YouTube continua tocando, invisível, atrás da capa */}
+              {isYT && <div ref={slot} className="absolute inset-0" aria-hidden />}
+            </div>
           )}
         </div>
         <div className="mb-3 flex items-center gap-3">
@@ -275,6 +326,7 @@ export function NowPlaying({ open, onClose, onOpenQueue, onOpenLyrics }: { open:
               </span>
             </p>
           </div>
+          <DownloadButton track={t} big />
           <LikeButton big />
         </div>
         <ProgressBar />
@@ -415,7 +467,8 @@ export function LyricsSheet({ open, onClose }: { open: boolean; onClose: () => v
       .finally(() => setLoading(false));
   }, [open, t?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const lines = useMemo(() => (lyrics ? parseLrc(lyrics) : null), [lyrics]);
-  const active = lines ? lines.reduce((acc, l, i) => (l.t <= p.position ? i : acc), -1) : -1;
+  const position = usePlayerPosition();
+  const active = lines ? lines.reduce((acc, l, i) => (l.t <= position ? i : acc), -1) : -1;
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [active]);

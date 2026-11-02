@@ -1,8 +1,10 @@
+import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { PageLoading } from '../../components/ui';
 import { pagePad } from '../../components/Layout';
 
 const TABS = [
-  ['', 'Painel'], ['users', 'Contas'], ['tracks', 'Músicas'], ['artists', 'Artistas'], ['albums', 'Álbuns'], ['genres', 'Gêneros'],
+  ['', 'Painel'], ['users', 'Usuários'], ['tracks', 'Músicas'], ['imports', 'Importar do Spotify'], ['artists', 'Artistas'], ['albums', 'Álbuns'], ['genres', 'Gêneros'],
   ['moderation', 'Moderação'], ['reports', 'Reproduções'], ['settings', 'Configurações'], ['audit', 'Auditoria'],
 ];
 
@@ -19,7 +21,9 @@ export default function AdminLayout() {
           ))}
         </nav>
       </div>
-      <Outlet />
+      <Suspense fallback={<PageLoading />}>
+        <Outlet />
+      </Suspense>
     </div>
   );
 }

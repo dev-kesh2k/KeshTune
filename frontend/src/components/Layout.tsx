@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { CircleArrowDown, Heart, Home, Library, Plus, Search, Settings, Shield, WifiOff } from 'lucide-react';
 import { api } from '../lib/api';
@@ -10,7 +10,7 @@ import { onRealtime, startRealtime } from '../lib/realtime';
 import { useToast } from '../lib/toast';
 import type { PlaylistCard } from '../lib/types';
 import { LyricsSheet, MiniPlayer, NowPlaying, PlayerBar, QueueSheet } from './PlayerParts';
-import { Cover } from './ui';
+import { Cover, PageLoading } from './ui';
 
 function useSidebarPlaylists() {
   const [items, setItems] = useState<PlaylistCard[]>([]);
@@ -87,6 +87,13 @@ export function Layout() {
   }, [player]);
 
   const isYT = player.current?.track.source === 'youtube';
+  // Posição do player do YouTube no "Tocando agora" (clipe grande ou janelinha na capa), medida pelo NowPlaying
+  const [videoSlot, setVideoSlot] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  useEffect(() => {
+    const h = (e: Event) => setVideoSlot((e as CustomEvent).detail);
+    window.addEventListener('spx:video-slot', h);
+    return () => window.removeEventListener('spx:video-slot', h);
+  }, []);
   const navItems = [
     { to: '/', label: 'Início', icon: Home, end: true },
     { to: '/search', label: 'Buscar', icon: Search },
@@ -108,7 +115,7 @@ export function Layout() {
           <nav className="card p-3">
             <Link to="/" className="mb-2 flex items-center gap-2 px-3 py-2">
               <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className="h-8 w-8" />
-              <span className="text-lg font-black tracking-tight">Spotify X</span>
+              <span className="text-lg font-black tracking-tight">KeshTune</span>
             </Link>
             {navItems.map((n) => (
               <NavLink
@@ -149,7 +156,7 @@ export function Layout() {
               ))}
             </div>
             <NavLink to="/settings" className="mt-2 flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm text-white/70 hover:text-white">
-              <Settings className="h-5 w-5" /> <span className="truncate">{me?.display_name}</span>
+              <Settings className="h-5 w-5" /> <span className="truncate">Configurações</span>
             </NavLink>
           </div>
         </aside>
@@ -162,7 +169,9 @@ export function Layout() {
             </div>
           )}
           <div className="pb-40 lg:pb-8">
-            <Outlet />
+            <Suspense fallback={<PageLoading />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
@@ -170,13 +179,18 @@ export function Layout() {
       {/* Player do YouTube (oficial, visível enquanto toca) */}
       <div
         className={
-          !isYT || !player.videoMode
-            ? 'pointer-events-none fixed -left-[9999px] top-0 h-[180px] w-[320px] opacity-0'
-            : nowOpen
-              ? 'fixed inset-x-0 top-[max(5.5rem,calc(env(safe-area-inset-top)+5rem))] z-[65] mx-auto aspect-video w-[min(100%-2.5rem,36rem)] overflow-hidden rounded-xl shadow-2xl'
-              : 'fixed bottom-[calc(9.5rem+env(safe-area-inset-bottom))] right-3 z-40 aspect-video w-[min(55vw,18rem)] overflow-hidden rounded-xl shadow-2xl ring-1 ring-white/10 lg:bottom-24'
+          !isYT
+            ? 'pointer-events-none fixed -left-[9999px] top-0 h-px w-px opacity-0'
+            : nowOpen && videoSlot
+              ? player.videoMode === 'audio'
+                ? 'pointer-events-none fixed z-[55] overflow-hidden opacity-0' // modo "Música": toca sem mostrar o clipe
+                : 'fixed z-[65] overflow-hidden rounded-xl shadow-2xl'
+              : player.videoMode === 'audio'
+                ? 'pointer-events-none fixed bottom-24 right-3 z-0 aspect-video w-72 overflow-hidden opacity-0' // modo "Música": sem miniatura flutuante
+                : 'fixed bottom-[calc(9.5rem+env(safe-area-inset-bottom))] right-3 z-40 aspect-video w-[min(55vw,18rem)] overflow-hidden rounded-xl shadow-2xl ring-1 ring-white/10 lg:bottom-24'
         }
-        aria-hidden={!isYT || !player.videoMode}
+        style={isYT && nowOpen && videoSlot ? videoSlot : undefined}
+        aria-hidden={!isYT}
       >
         <div ref={player.ytHost} className="h-full w-full" />
       </div>

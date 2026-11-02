@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgeCheck, ImagePlus, Pencil, Plus, Trash2, UserRound } from 'lucide-react';
+import { BadgeCheck, Flame, ImagePlus, Pencil, Plus, Trash2, UserRound } from 'lucide-react';
 import { api, errText } from '../../lib/api';
 import { albumType, fmtDate } from '../../lib/format';
 import { uploadSquareImage } from '../../lib/image';
@@ -60,6 +60,18 @@ export function Artists() {
   return (
     <div className="pb-6">
       <SearchBar value={q} onChange={setQ} placeholder="Buscar artista">
+        <button
+          className="btn-secondary"
+          title="Usa a foto do canal do YouTube com o mesmo nome do artista"
+          onClick={async () => {
+            try {
+              const r = await api<{ pending: number }>('admin/artists/fetch-images', { method: 'POST' });
+              toast(r.pending ? `Buscando fotos de ${r.pending} artistas em segundo plano` : 'Todos os artistas já têm foto', 'ok');
+            } catch (err) { toast(errText(err), 'error'); }
+          }}
+        >
+          <ImagePlus className="h-4 w-4" /> Buscar fotos
+        </button>
         <button className="btn-primary" onClick={() => setEdit({ name: '' })}><Plus className="h-4 w-4" /> Novo artista</button>
       </SearchBar>
       {loading ? <PageLoading /> : error ? <ErrorBox text={error} onRetry={() => reload()} /> : !data?.items.length ? <Empty title="Nenhum artista" text="Artistas também são criados automaticamente ao adicionar músicas." /> : (
@@ -175,6 +187,24 @@ export function Genres() {
   const { data, error, loading, reload } = useFetch<{ items: Genre[] }>('browse/categories');
   const [edit, setEdit] = useState<Partial<Genre> | null>(null);
   const [del, setDel] = useState<Genre | null>(null);
+  const [filling, setFilling] = useState<number | null>(null);
+  /** Busca no YouTube as músicas em alta de cada gênero e cadastra (tocam online; nada é baixado). */
+  const fill = async (list: Genre[]) => {
+    let total = 0;
+    for (const g of list) {
+      setFilling(g.id);
+      try {
+        const r = await api<{ added: number; linked: number }>(`admin/genres/${g.id}/trending`, { body: { limit: 100 } });
+        total += r.added;
+        toast(`${g.name}: ${r.added} novas, ${r.linked} já estavam no catálogo`, 'ok');
+        reload(true);
+      } catch (err) {
+        toast(`${g.name}: ${errText(err)}`, 'error');
+      }
+    }
+    setFilling(null);
+    if (list.length > 1) toast(`Pronto: ${total} músicas novas no catálogo`, 'ok');
+  };
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -192,13 +222,21 @@ export function Genres() {
         <section key={k}>
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="font-bold">{k === 'genre' ? 'Gêneros' : 'Humores / momentos'}</h2>
-            <button className="btn-secondary" onClick={() => setEdit({ kind: k, name: '', color: '#7c5cff' })}><Plus className="h-4 w-4" /> Adicionar</button>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-secondary" disabled={filling !== null} onClick={() => fill(data!.items.filter((g) => g.kind === k))}>
+                <Flame className="h-4 w-4" /> Preencher todos com músicas em alta
+              </button>
+              <button className="btn-secondary" onClick={() => setEdit({ kind: k, name: '', color: '#7c5cff' })}><Plus className="h-4 w-4" /> Adicionar</button>
+            </div>
           </div>
           <ul className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-4">
             {data?.items.filter((g) => g.kind === k).map((g) => (
               <li key={g.id} className="card flex items-center gap-2 p-2 pl-3">
                 <span className="h-5 w-5 shrink-0 rounded" style={{ background: g.color }} />
                 <span className="min-w-0 flex-1 truncate text-sm">{g.name} <span className="text-muted">({g.track_count})</span></span>
+                <button className="icon-btn" aria-label={`Músicas em alta: ${g.name}`} title="Buscar 100 músicas em alta no YouTube" disabled={filling !== null} onClick={() => fill([g])}>
+                  {filling === g.id ? <Spinner className="h-4 w-4" /> : <Flame className="h-4 w-4" />}
+                </button>
                 <button className="icon-btn" aria-label={`Editar ${g.name}`} onClick={() => setEdit(g)}><Pencil className="h-4 w-4" /></button>
                 <button className="icon-btn text-red-300" aria-label={`Excluir ${g.name}`} onClick={() => setDel(g)}><Trash2 className="h-4 w-4" /></button>
               </li>
