@@ -1,4 +1,3 @@
-import { mediaUrl } from '../lib/format';
 import { useParams } from 'react-router-dom';
 import { Radio } from 'lucide-react';
 import { usePlayer } from '../lib/player';
@@ -20,13 +19,8 @@ export default function Genre() {
   return (
     <div>
       <PageHero color={data.color}>
-        <div className="flex items-end gap-4">
-          {data.cover_url && <img src={mediaUrl(data.cover_url)!} alt="" className="h-28 w-28 shrink-0 rounded-md object-cover shadow-2xl sm:h-36 sm:w-36" />}
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wider text-white/80">{data.kind === 'mood' ? 'Momento' : 'Gênero'}</p>
-            <h1 className="break-words text-[clamp(2rem,9vw,4rem)] font-black leading-none">{data.name}</h1>
-          </div>
-        </div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-white/80">{data.kind === 'mood' ? 'Momento' : 'Gênero'}</p>
+        <h1 className="break-words text-[clamp(2rem,9vw,4rem)] font-black leading-none">{data.name}</h1>
       </PageHero>
       {data.tracks.length ? (
         <>

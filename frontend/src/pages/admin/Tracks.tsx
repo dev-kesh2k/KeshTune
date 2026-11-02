@@ -57,7 +57,6 @@ export default function Tracks() {
   const { data, error, loading, reload } = useFetch<{ items: AT[] }>(`admin/tracks?q=${encodeURIComponent(deb)}&status=${status}`, [deb, status]);
   const [form, setForm] = useState<{ track?: AT } | null>(null);
   const [batch, setBatch] = useState(false);
-  const [impPl, setImpPl] = useState(false);
   const [takedown, setTakedown] = useState<AT | null>(null);
   const [reason, setReason] = useState('');
   const [del, setDel] = useState<AT | null>(null);
@@ -69,7 +68,6 @@ export default function Tracks() {
           <option value="all">Todas</option><option value="active">No ar</option><option value="takedown">Retiradas</option>
         </select>
         <button className="btn-secondary" onClick={() => setBatch(true)}><Upload className="h-4 w-4" /> Enviar vários</button>
-        <button className="btn-secondary" onClick={() => setImpPl(true)}><Youtube className="h-4 w-4" /> Importar playlist</button>
         <button className="btn-primary" onClick={() => setForm({})}><Plus className="h-4 w-4" /> Nova música</button>
       </SearchBar>
       {loading ? <PageLoading /> : error ? <ErrorBox text={error} onRetry={() => reload()} /> : !data?.items.length ? (
@@ -103,7 +101,6 @@ export default function Tracks() {
         </ul>
       )}
       {form && <TrackForm track={form.track} onClose={(saved) => { setForm(null); if (saved) reload(true); }} />}
-      <ImportPlaylist open={impPl} onClose={(changed) => { setImpPl(false); if (changed) reload(true); }} />
       <BatchUpload open={batch} onClose={() => { setBatch(false); reload(true); }} />
       <Sheet open={!!takedown} onClose={() => setTakedown(null)} title="Retirar do catálogo">
         <form className="space-y-4 pt-2" onSubmit={async (e) => { e.preventDefault(); try { await api(`admin/takedown/${takedown!.id}`, { method: 'PATCH', body: { takedown: true, reason } }); toast('Faixa retirada; downloads serão apagados na próxima sincronização', 'ok'); setTakedown(null); reload(true); } catch (err) { toast(errText(err), 'error'); } }}>
@@ -366,46 +363,6 @@ function BatchUpload({ open, onClose }: { open: boolean; onClose: () => void }) 
           </ul>
         )}
         <button className="btn-primary w-full" disabled={!items.length || running} onClick={run}>{running && <Spinner className="h-4 w-4" />} Enviar {items.length || ''} arquivo(s)</button>
-      </div>
-    </Sheet>
-  );
-}
-
-
-function ImportPlaylist({ open, onClose }: { open: boolean; onClose: (changed?: boolean) => void }) {
-  const toast = useToast();
-  const [url, setUrl] = useState('');
-  const [name, setName] = useState('');
-  const [genreId, setGenreId] = useState('');
-  const [busy, setBusy] = useState(false);
-  const cats = useFetch<{ items: Genre[] }>('browse/categories', []);
-  const run = async () => {
-    setBusy(true);
-    try {
-      const r = await api<{ name: string; total: number; created: number; skipped: number }>('admin/youtube/import-playlist', {
-        body: { url, name: name || undefined, genre_id: genreId ? Number(genreId) : undefined },
-      });
-      toast(`"${r.name}": ${r.total} faixas (${r.created} novas${r.skipped ? `, ${r.skipped} indisponíveis` : ''})`, 'ok');
-      setUrl(''); setName(''); setGenreId('');
-      onClose(true);
-    } catch (e) {
-      toast(errText(e), 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Sheet open={open} onClose={() => !busy && onClose()} title="Importar playlist do YouTube">
-      <div className="space-y-3">
-        <Field label="Link da playlist"><input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/playlist?list=…" /></Field>
-        <Field label="Nome (opcional)"><input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} /></Field>
-        <Field label="Gênero (opcional)">
-          <select className="input" value={genreId} onChange={(e) => setGenreId(e.target.value)}>
-            <option value="">Sem gênero</option>
-            {cats.data?.items.filter((g) => g.kind === 'genre').map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-        </Field>
-        <button className="btn-primary w-full" disabled={busy || !url.trim()} onClick={run}>{busy ? <Spinner className="h-4 w-4" /> : <Youtube className="h-4 w-4" />} Importar</button>
       </div>
     </Sheet>
   );
