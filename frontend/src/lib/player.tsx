@@ -7,7 +7,7 @@ import type { Track } from './types';
 
 export type QItem = { uid: string; track: Track };
 export type Repeat = 'off' | 'all' | 'one';
-export type PlayContext = { type: 'playlist' | 'album' | 'artist' | 'liked' | 'search' | 'radio' | 'track' | 'genre' | 'downloads' | 'queue'; id?: string; name?: string };
+export type PlayContext = { type: 'playlist' | 'album' | 'artist' | 'liked' | 'search' | 'radio' | 'track' | 'genre' | 'downloads' | 'queue' | 'mix'; id?: string; name?: string };
 
 type PlayerState = {
   queue: QItem[];

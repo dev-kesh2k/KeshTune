@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CircleArrowDown, Settings, Trash2 } from 'lucide-react';
 import { artistNames, fmtDate } from '../lib/format';
+import { useDlGroups } from '../lib/dlgroups';
 import { effectiveState, folderStatus, offlineSupported, removeDownload, useDownloads, useOfflineMode } from '../lib/offline';
 import { usePlayer } from '../lib/player';
 import { Cover, Empty } from '../components/ui';
@@ -20,7 +21,15 @@ export default function Downloads() {
     folderStatus().then((f) => setFolder(f.name)).catch(() => setFolder(null));
   }, []);
 
+  const groups = useDlGroups();
+  const inGroup = useMemo(() => new Set(groups.flatMap((g) => g.trackIds)), [groups]);
   const sorted = useMemo(() => [...list].sort((a, b) => String(b.downloaded_at || '').localeCompare(String(a.downloaded_at || ''))), [list]);
+  const byId = useMemo(() => new Map(list.map((d) => [d.track_id, d])), [list]);
+  // Coleção sem nenhuma música no aparelho (apagadas uma a uma) não aparece
+  const shown = groups
+    .map((g) => ({ g, done: g.trackIds.filter((t) => { const d = byId.get(t); return d && ['READY', 'EXPIRING'].includes(effectiveState(d)); }).length, has: g.trackIds.some((t) => byId.has(t)) }))
+    .filter((x) => x.has);
+  const loose = sorted.filter((r) => !inGroup.has(r.track_id));
   const ready = sorted.filter((r) => ['READY', 'EXPIRING'].includes(effectiveState(r)));
 
   return (
@@ -40,8 +49,27 @@ export default function Downloads() {
           {ready.length > 0 && (
             <button className="btn-primary mb-4" onClick={() => player.playTracks(ready.map((r) => r.track), 0, { type: 'downloads', name: 'Downloads' })}>Tocar baixadas</button>
           )}
+          {shown.length > 0 && (
+            <>
+              <h2 className="mb-2 mt-2 text-xl font-bold">Mixes, playlists e álbuns</h2>
+              <ul className="mb-6 space-y-1">
+                {shown.map(({ g, done }) => (
+                  <li key={g.id}>
+                    <Link to={`/downloads/${encodeURIComponent(g.id)}`} className="flex min-h-16 items-center gap-3 rounded-xl p-2 hover:bg-white/[0.04]">
+                      <Cover url={offline ? null : g.image} alt={g.title} className="h-14 w-14 shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold">{g.title}</span>
+                        <span className="block truncate text-xs text-muted">{g.kind} · {done < g.trackIds.length ? `${done} de ${g.trackIds.length}` : g.trackIds.length} músicas</span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {loose.length > 0 && <h2 className="mb-2 text-xl font-bold">Músicas baixadas avulsas</h2>}
+            </>
+          )}
           <ul className="space-y-1">
-            {sorted.map((r) => {
+            {loose.map((r) => {
               const st = effectiveState(r);
               return (
                 <li key={r.track_id} className="flex min-h-16 items-center gap-3 rounded-lg p-2 hover:bg-white/[0.04]">

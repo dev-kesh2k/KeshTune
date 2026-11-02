@@ -35,7 +35,7 @@ export default function Liked() {
         <Empty icon={<Heart className="h-10 w-10" />} title="As músicas que você curtir aparecem aqui" text="Toque no coração de qualquer música para salvar." />
       ) : (
         <>
-          <PlayActions tracks={tracks} ctx={ctx} />
+          <PlayActions tracks={tracks} ctx={ctx} group={{ kind: 'Playlist' }} />
           <div className={pagePad}>
             <TrackListHeader showAlbum />
             <TrackList tracks={tracks} showAlbum onPlay={(i) => player.playTracks(tracks, i, ctx)} />
