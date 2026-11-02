@@ -364,6 +364,7 @@ fun AlbumScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: Albu
 
 @Composable
 fun ArtistScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: ArtistViewModel = hiltViewModel()) {
+    val downloads = LocalDownloads.current
     when (val s = vm.state.collectAsStateWithLifecycle().value) {
         Ui.Loading -> Loading()
         is Ui.Error -> ErrorBox(s.message, vm::refresh)
@@ -377,6 +378,7 @@ fun ArtistScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: Art
                         enabled = a.topTracks.any { it.playable },
                         onPlay = { player.play(a.topTracks) },
                         onShuffle = { player.play(a.topTracks, shuffle = true) },
+                        onDownload = { downloads?.enqueue(a.topTracks, DownloadGroup("artist:${a.id}", a.name, "Artista", a.imageUrl)) },
                         imageShape = CircleShape,
                     )
                     if (a.topTracks.isNotEmpty()) SectionTitle("As ${a.topTracks.size} mais tocadas")
