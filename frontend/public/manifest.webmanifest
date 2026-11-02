@@ -1,6 +1,6 @@
 {
-  "name": "KeshTune",
-  "short_name": "KeshTune",
+  "name": "Spotify X",
+  "short_name": "Spotify X",
   "description": "Streaming de música",
   "start_url": "./",
   "scope": "./",

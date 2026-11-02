@@ -92,7 +92,7 @@ authRouter.post('/auth/2fa/setup', auth(), ah(async (req, res) => {
   if (u.totp_enabled) throw bad('A verificação em duas etapas já está ativa');
   const secret = newTotpSecret();
   await q(`UPDATE users SET totp_secret = $2 WHERE id = $1`, [req.user.id, sealTotp(secret)]);
-  const label = encodeURIComponent(`KeshTune:${u.email}`);
+  const label = encodeURIComponent(`Spotify X:${u.email}`);
   res.json({ secret, otpauth_url: `otpauth://totp/${label}?secret=${secret}&issuer=Spotify%20X&digits=6&period=30` });
 }));
 authRouter.post('/auth/2fa/enable', auth(), ah(async (req, res) => {

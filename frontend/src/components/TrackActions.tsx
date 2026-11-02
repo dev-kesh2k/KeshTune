@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Check, CircleArrowDown, Disc3, Heart, ListEnd, ListPlus, ListStart, Mic2, Plus, Radio, Share2, Trash2, UserRound, Info, Youtube,
+  Check, CircleArrowDown, Disc3, Heart, ListEnd, ListPlus, ListStart, Mic2, Plus, Radio, Share2, Trash2, UserRound, Info,
 } from 'lucide-react';
 import { api, ApiError, errText } from '../lib/api';
 import { artistNames, shareUrl } from '../lib/format';
-import { downloadTracks, effectiveState, offlineSupported, removeDownload, useDownloads, type DlRecord, type DlState } from '../lib/offline';
+import { downloadTracks, effectiveState, removeDownload, useDownloads, type DlRecord, type DlState } from '../lib/offline';
 import { mutate } from '../lib/pending';
 import { usePlayer } from '../lib/player';
 import { useToast } from '../lib/toast';
@@ -22,9 +22,6 @@ type UiApi = {
   dlProgress: (trackId: string) => number | undefined;
   download: (tracks: Track[]) => Promise<void>;
   share: (path: string, title: string) => Promise<void>;
-  saveFromYoutube: (t: Track) => Promise<void>;
-  saveTracks: (tracks: Track[]) => Promise<void>;
-  isSaving: (trackId: string) => boolean;
 };
 const Ctx = createContext<UiApi>(null as unknown as UiApi);
 export const useUi = () => useContext(Ctx);
@@ -36,7 +33,6 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [menu, setMenu] = useState<{ track: Track; opts: MenuOpts } | null>(null);
   const [addTracks, setAddTracks] = useState<Track[] | null>(null);
   const [likes, setLikes] = useState<Map<string, boolean>>(new Map());
-  const [saving, setSaving] = useState<Set<string>>(new Set());
   const downloads = useDownloads();
   const dlMap = useMemo(() => new Map<string, DlRecord>(downloads.map((d) => [d.track_id, d])), [downloads]);
 
@@ -80,89 +76,11 @@ export function UiProvider({ children }: { children: ReactNode }) {
         toast(n ? `${n} faixa(s) na fila de download` : 'Já está baixado', 'ok');
       } catch (e) {
         const msg = (e as Error).message;
-        toast(msg, 'error', /pasta/i.test(msg) ? { label: 'Abrir', run: () => nav('/settings') } : undefined);
+        toast(msg, 'error', /pasta/i.test(msg) ? { label: 'Abrir', run: () => nav('/downloads') } : undefined);
       }
     },
     [toast, nav]
   );
-
-  const mark = (ids: string[], on: boolean) =>
-    setSaving((s) => {
-      const n = new Set(s);
-      for (const id of ids) (on ? n.add(id) : n.delete(id));
-      return n;
-    });
-
-  /**
-   * Baixa uma lista de faixas (uma música, playlist ou álbum inteiro). As de arquivo vão direto para Downloads;
-   * as do YouTube o servidor baixa com o yt-dlp (fila, uma por vez) e, conforme ficam prontas, entram em Downloads.
-   */
-  const saveTracks = useCallback(
-    async (list: Track[]) => {
-      const files = list.filter((t) => t.source === 'file' && t.downloadable);
-      const yts = list.filter((t) => t.source === 'youtube' && t.playable && !saving.has(t.id));
-      let offlineOk = offlineSupported();
-      // Leva para Downloads em silêncio (sem um aviso por lote); só avisa se faltar a pasta ou der erro
-      const toDevice = async (tracks: Track[]) => {
-        if (!offlineOk || !tracks.length) return;
-        try {
-          await downloadTracks(tracks);
-        } catch (e) {
-          offlineOk = false;
-          const msg = (e as Error).message;
-          toast(msg, 'error', /pasta/i.test(msg) ? { label: 'Abrir', run: () => nav('/settings') } : undefined);
-        }
-      };
-      if (!files.length && !yts.length) return;
-      if (files.length && !yts.length) return download(files);
-      await toDevice(files);
-      const ids = yts.map((t) => t.id);
-      mark(ids, true);
-      try {
-        const r = await api<{ items: { track_id: string; status: string; job_id: string | null; error?: string }[] }>('youtube/downloads', { body: { track_ids: ids } });
-        let saved = 0;
-        let failed = r.items.filter((i) => i.status === 'failed').length;
-        const pending = new Map(r.items.filter((i) => i.job_id && i.status !== 'done' && i.status !== 'failed').map((i) => [i.job_id!, i.track_id]));
-        // Já eram arquivo no servidor: só falta baixar para o aparelho
-        const ready = r.items.filter((i) => i.status === 'done').map((i) => ({ ...yts.find((t) => t.id === i.track_id)!, source: 'file' as const, downloadable: true }));
-        saved += ready.length;
-        mark(r.items.filter((i) => !i.job_id || i.status === 'done' || i.status === 'failed').map((i) => i.track_id), false);
-        await toDevice(ready);
-        if (pending.size) {
-          toast(yts.length === 1 ? 'Baixando do YouTube no servidor. Avisamos quando terminar.' : `Baixando ${pending.size} músicas do YouTube no servidor. Pode continuar usando o app.`);
-        }
-        const deadline = Date.now() + Math.min(3 * 3600, 120 + pending.size * 60) * 1000;
-        while (pending.size && Date.now() < deadline) {
-          await new Promise((ok) => setTimeout(ok, 4000));
-          let j: { items: { id: string; status: string; track_id: string; track: Track | null }[] };
-          try {
-            j = await api(`youtube/jobs?ids=${[...pending.keys()].slice(0, 200).join(',')}`);
-          } catch (e) {
-            if (e instanceof ApiError) throw e;
-            continue; // sem rede por um instante: tenta de novo
-          }
-          const now: Track[] = [];
-          for (const x of j.items) {
-            if (x.status === 'done') { if (x.track) now.push(x.track); saved++; }
-            else if (x.status === 'failed' || x.status === 'canceled') failed++;
-            else continue;
-            pending.delete(x.id);
-            mark([x.track_id], false);
-          }
-          await toDevice(now);
-        }
-        if (yts.length === 1 && saved) toast(`"${yts[0].title}" agora está salva no app`, 'ok');
-        else if (yts.length > 1) toast(`${saved} músicas salvas no app${failed ? `, ${failed} com erro` : ''}${pending.size ? `, ${pending.size} ainda na fila` : ''}`, failed ? 'error' : 'ok');
-        else if (failed) toast('Não foi possível baixar esta música do YouTube', 'error');
-      } catch (e) {
-        toast(errText(e), 'error');
-      } finally {
-        mark(ids, false);
-      }
-    },
-    [saving, toast, download, nav]
-  );
-  const saveFromYoutube = useCallback((t: Track) => saveTracks([t]), [saveTracks]);
 
   const share = useCallback(
     async (path: string, title: string) => {
@@ -192,9 +110,6 @@ export function UiProvider({ children }: { children: ReactNode }) {
     dlProgress: (id) => dlMap.get(id)?.progress,
     download,
     share,
-    saveFromYoutube,
-    saveTracks,
-    isSaving: (id) => saving.has(id),
   };
 
   const m = menu?.track;
@@ -244,12 +159,6 @@ export function UiProvider({ children }: { children: ReactNode }) {
                   <CircleArrowDown className="h-5 w-5" /> Baixar
                 </button>
               )
-            )}
-            {m.source === 'youtube' && (
-              <button className="menu-item" disabled={saving.has(m.id)} onClick={() => { close(); saveFromYoutube(m); }}>
-                {saving.has(m.id) ? <Spinner className="h-5 w-5" /> : <Youtube className="h-5 w-5" />}
-                {saving.has(m.id) ? 'Baixando do YouTube…' : 'Baixar (salvar no app)'}
-              </button>
             )}
             {m.artists.map((a) => (
               <button key={a.id} className="menu-item" onClick={() => go(`/artist/${a.id}`)}>
@@ -391,38 +300,5 @@ function AddToPlaylist({ tracks, onClose }: { tracks: Track[] | null; onClose: (
         </>
       )}
     </Sheet>
-  );
-}
-
-/** Botão de download da faixa: do YouTube, salva no app (servidor) e baixa; de arquivo, baixa para ouvir offline. */
-export function DownloadButton({ track: t, big, className = '' }: { track: Track; big?: boolean; className?: string }) {
-  const ui = useUi();
-  const st = ui.dlState(t.id);
-  const size = big ? 'h-7 w-7' : 'h-5 w-5';
-  if (st === 'READY' || st === 'EXPIRING') {
-    return (
-      <span className={`icon-btn ${st === 'READY' ? 'text-accent-soft' : 'text-amber-400'} ${className}`} role="img" aria-label="Baixada" title="Baixada">
-        <Check className={size} />
-      </span>
-    );
-  }
-  if (ui.isSaving(t.id) || st === 'QUEUED' || st === 'DOWNLOADING') {
-    const pct = ui.dlProgress(t.id);
-    return (
-      <span className={`icon-btn text-accent-soft ${className}`} role="img" aria-label={pct != null ? `Baixando ${pct}%` : 'Baixando'} title="Baixando">
-        <Spinner className={size} />
-      </span>
-    );
-  }
-  if (t.source !== 'youtube' && !t.downloadable) return null;
-  return (
-    <button
-      className={`icon-btn ${st === 'FAILED' || st === 'EXPIRED' ? 'text-red-400' : ''} ${className}`}
-      aria-label="Baixar"
-      title={t.source === 'youtube' ? 'Baixar (salvar no app)' : 'Baixar para ouvir offline'}
-      onClick={() => (t.source === 'youtube' ? ui.saveFromYoutube(t) : ui.download([t]))}
-    >
-      <CircleArrowDown className={size} />
-    </button>
   );
 }

@@ -18,15 +18,12 @@ async function mixFor(user, limit = 30) {
         WHERE h.user_id = $1 AND h.played_at > now() - interval '60 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 5),
      a AS (
        SELECT ta.artist_id, count(*) AS n FROM play_history h JOIN track_artists ta ON ta.track_id = h.track_id AND ta.role = 'main'
-        WHERE h.user_id = $1 AND h.played_at > now() - interval '60 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 10),
-     cand AS (
-       SELECT tg.track_id AS id, g.n AS s FROM track_genres tg JOIN g ON g.genre_id = tg.genre_id
-       UNION ALL SELECT ta.track_id, a.n FROM track_artists ta JOIN a ON a.artist_id = ta.artist_id)
-     SELECT t.id, sum(c.s) AS score
-       FROM cand c JOIN tracks t ON t.id = c.id
+        WHERE h.user_id = $1 AND h.played_at > now() - interval '60 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 10)
+     SELECT t.id, (COALESCE((SELECT sum(g.n) FROM track_genres tg JOIN g ON g.genre_id = tg.genre_id WHERE tg.track_id = t.id), 0)
+                 + COALESCE((SELECT sum(a.n) FROM track_artists ta JOIN a ON a.artist_id = ta.artist_id WHERE ta.track_id = t.id), 0)) AS score
+       FROM tracks t
       WHERE t.status = 'active'
         AND NOT EXISTS (SELECT 1 FROM play_history h WHERE h.user_id = $1 AND h.track_id = t.id AND h.played_at > now() - interval '2 days')
-      GROUP BY t.id, t.popularity
       ORDER BY score DESC, t.popularity DESC, random() LIMIT $2`,
     [user.id, limit]
   );
@@ -36,50 +33,40 @@ async function mixFor(user, limit = 30) {
 
 catalogRouter.get('/browse/home', ah(async (req, res) => {
   const u = req.user;
-  const [recentRows, topPlayed, newTracks, artists, { n: catalogSize }] = await Promise.all([
-    q(
-      `SELECT track_id AS id FROM (SELECT DISTINCT ON (track_id) track_id, played_at FROM play_history WHERE user_id = $1
-         ORDER BY track_id, played_at DESC) x ORDER BY played_at DESC LIMIT 12`,
-      [u.id]
-    ),
-    q(
-      `SELECT pc.track_id AS id FROM play_counts pc JOIN tracks t ON t.id = pc.track_id AND t.status = 'active'
-        WHERE pc.day > current_date - 30 GROUP BY pc.track_id ORDER BY sum(pc.plays) DESC LIMIT 12`
-    ),
-    q(`SELECT id FROM tracks WHERE status = 'active' ORDER BY created_at DESC LIMIT 12`),
-    q(
-      `SELECT a.id, a.name, a.image_url FROM (
-         SELECT ta.artist_id, sum(t.popularity) AS pop FROM track_artists ta JOIN tracks t ON t.id = ta.track_id AND t.status = 'active'
-          GROUP BY ta.artist_id ORDER BY pop DESC LIMIT 12) x
-         JOIN artists a ON a.id = x.artist_id ORDER BY x.pop DESC, a.name`
-    ),
-    one(`SELECT count(*)::int AS n FROM tracks WHERE status = 'active'`),
-  ]);
-  // Poucas reproduções no mês: completa com as mais populares
-  const topRows = topPlayed.length >= 12 ? topPlayed : [
-    ...topPlayed,
-    ...(await q(
-      `SELECT id FROM tracks WHERE status = 'active' AND NOT (id = ANY($1::uuid[])) ORDER BY popularity DESC, created_at DESC LIMIT $2`,
-      [ids(topPlayed), 12 - topPlayed.length]
-    )),
-  ];
-  const [recent, top, fresh, mix, releases, followedReleases, myPlaylists, publicPlaylists] = await Promise.all([
+  const recentRows = await q(
+    `SELECT track_id AS id FROM (SELECT DISTINCT ON (track_id) track_id, played_at FROM play_history WHERE user_id = $1
+       ORDER BY track_id, played_at DESC) x ORDER BY played_at DESC LIMIT 12`,
+    [u.id]
+  );
+  const topRows = await q(
+    `SELECT t.id FROM tracks t LEFT JOIN play_counts pc ON pc.track_id = t.id AND pc.day > current_date - 30
+      WHERE t.status = 'active' GROUP BY t.id ORDER BY COALESCE(sum(pc.plays), 0) DESC, t.popularity DESC, t.created_at DESC LIMIT 12`
+  );
+  const newTracks = await q(`SELECT id FROM tracks WHERE status = 'active' ORDER BY created_at DESC LIMIT 12`);
+  const [recent, top, fresh, mix] = await Promise.all([
     hydrateTracks(ids(recentRows), u), hydrateTracks(ids(topRows), u), hydrateTracks(ids(newTracks), u), mixFor(u, 20),
-    albumCards('true', [], 12),
-    albumCards(
-      `EXISTS (SELECT 1 FROM album_artists aa JOIN library_items li ON li.item_type = 'artist' AND li.item_id = aa.artist_id AND li.user_id = $1
-               WHERE aa.album_id = al.id) AND (al.release_date IS NULL OR al.release_date > current_date - 120)`,
-      [u.id], 12
-    ),
-    playlistCards(
-      `(p.owner_id = $1 OR EXISTS (SELECT 1 FROM library_items li WHERE li.user_id = $1 AND li.item_type = 'playlist' AND li.item_id = p.id))`,
-      [u.id], { limit: 8 }
-    ),
-    playlistCards(
-      `p.visibility = 'public' AND NOT p.hidden_by_admin AND p.owner_id <> $1`, [u.id],
-      { limit: 12, order: `(SELECT count(*) FROM library_items li WHERE li.item_type = 'playlist' AND li.item_id = p.id) DESC, p.updated_at DESC` }
-    ),
   ]);
+  const releases = await albumCards('true', [], 12);
+  const followedReleases = await albumCards(
+    `EXISTS (SELECT 1 FROM album_artists aa JOIN library_items li ON li.item_type = 'artist' AND li.item_id = aa.artist_id AND li.user_id = $1
+             WHERE aa.album_id = al.id) AND (al.release_date IS NULL OR al.release_date > current_date - 120)`,
+    [u.id], 12
+  );
+  const myPlaylists = await playlistCards(
+    `(p.owner_id = $1 OR EXISTS (SELECT 1 FROM library_items li WHERE li.user_id = $1 AND li.item_type = 'playlist' AND li.item_id = p.id))`,
+    [u.id], { limit: 8 }
+  );
+  const publicPlaylists = await playlistCards(
+    `p.visibility = 'public' AND NOT p.hidden_by_admin AND p.owner_id <> $1`, [u.id],
+    { limit: 12, order: `(SELECT count(*) FROM library_items li WHERE li.item_type = 'playlist' AND li.item_id = p.id) DESC, p.updated_at DESC` }
+  );
+  const artists = await q(
+    `SELECT a.id, a.name, a.image_url FROM artists a
+      WHERE EXISTS (SELECT 1 FROM track_artists ta JOIN tracks t ON t.id = ta.track_id AND t.status = 'active' WHERE ta.artist_id = a.id)
+      ORDER BY (SELECT COALESCE(sum(t.popularity), 0) FROM track_artists ta JOIN tracks t ON t.id = ta.track_id WHERE ta.artist_id = a.id) DESC, a.name
+      LIMIT 12`
+  );
+  const { n: catalogSize } = await one(`SELECT count(*)::int AS n FROM tracks WHERE status = 'active'`);
   res.json({ catalog_size: catalogSize, recent, mix, top, fresh, releases, followed_releases: followedReleases, my_playlists: myPlaylists, public_playlists: publicPlaylists, artists });
 }));
 
@@ -90,11 +77,8 @@ catalogRouter.get('/me/recommendations', ah(async (req, res) => {
 catalogRouter.get('/browse/categories', ah(async (_req, res) => {
   const rows = await q(
     `SELECT g.id, g.name, g.kind, g.color,
-            (SELECT count(*) FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active' WHERE tg.genre_id = g.id)::int AS track_count,
-            (SELECT COALESCE(t.cover_url, al.cover_url) FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active'
-               LEFT JOIN albums al ON al.id = t.album_id
-              WHERE tg.genre_id = g.id AND COALESCE(t.cover_url, al.cover_url) IS NOT NULL
-              ORDER BY t.popularity DESC, t.created_at LIMIT 1) AS cover_url
+            (SELECT t.cover_url FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active' WHERE tg.genre_id = g.id AND t.cover_url IS NOT NULL ORDER BY t.popularity DESC, t.created_at DESC LIMIT 1) AS cover_url,
+            (SELECT count(*) FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active' WHERE tg.genre_id = g.id)::int AS track_count
        FROM genres g ORDER BY g.kind, g.name`
   );
   res.json({ items: rows });
@@ -102,11 +86,11 @@ catalogRouter.get('/browse/categories', ah(async (_req, res) => {
 
 catalogRouter.get('/genres/:id', ah(async (req, res) => {
   const id = int(req.params.id, 'id', { min: 1, required: true });
-  const g = await one(`SELECT id, name, kind, color FROM genres WHERE id = $1`, [id]);
+  const g = await one(`SELECT g.id, g.name, g.kind, g.color, (SELECT t.cover_url FROM track_genres tg JOIN tracks t ON t.id = tg.track_id AND t.status = 'active' WHERE tg.genre_id = g.id AND t.cover_url IS NOT NULL ORDER BY t.popularity DESC, t.created_at DESC LIMIT 1) AS cover_url FROM genres g WHERE g.id = $1`, [id]);
   if (!g) throw notFound('Gênero não encontrado');
   const rows = await q(
     `SELECT t.id FROM tracks t JOIN track_genres tg ON tg.track_id = t.id AND tg.genre_id = $1
-      WHERE t.status = 'active' ORDER BY t.popularity DESC, t.created_at DESC LIMIT 100`,
+      WHERE t.status = 'active' ORDER BY t.popularity DESC, t.created_at DESC LIMIT 500`,
     [id]
   );
   const albums = await albumCards(`EXISTS (SELECT 1 FROM tracks t JOIN track_genres tg ON tg.track_id = t.id WHERE t.album_id = al.id AND tg.genre_id = $1)`, [id], 20);
@@ -184,14 +168,11 @@ export async function radioTracks(user, seedType, seedId, exclude = [], limit = 
   let rows;
   if (seedType === 'artist') {
     rows = await q(
-      // Candidatas: do artista ou dos gêneros dele (sem percorrer o catálogo inteiro)
-      `WITH g AS (SELECT DISTINCT tg.genre_id FROM track_genres tg JOIN track_artists ta ON ta.track_id = tg.track_id WHERE ta.artist_id = $1),
-            cand AS (SELECT ta.track_id AS id, 1 AS own FROM track_artists ta WHERE ta.artist_id = $1
-                     UNION ALL SELECT tg.track_id, 0 FROM track_genres tg JOIN g ON g.genre_id = tg.genre_id)
-       SELECT t.id FROM cand c JOIN tracks t ON t.id = c.id
-        WHERE t.status = 'active' AND NOT (t.id = ANY($2::uuid[]))
-        GROUP BY t.id, t.popularity
-        ORDER BY max(c.own) DESC, random() * (t.popularity + 5) DESC
+      `WITH g AS (SELECT DISTINCT tg.genre_id FROM track_genres tg JOIN track_artists ta ON ta.track_id = tg.track_id WHERE ta.artist_id = $1)
+       SELECT t.id FROM tracks t WHERE t.status = 'active' AND NOT (t.id = ANY($2::uuid[]))
+          AND (EXISTS (SELECT 1 FROM track_artists ta WHERE ta.track_id = t.id AND ta.artist_id = $1)
+               OR EXISTS (SELECT 1 FROM track_genres tg JOIN g ON g.genre_id = tg.genre_id WHERE tg.track_id = t.id))
+        ORDER BY (EXISTS (SELECT 1 FROM track_artists ta WHERE ta.track_id = t.id AND ta.artist_id = $1)) DESC, random() * (t.popularity + 5) DESC
         LIMIT $3`,
       [seedId, exclude, limit]
     );
@@ -205,21 +186,18 @@ export async function radioTracks(user, seedType, seedId, exclude = [], limit = 
     rows = await q(
       `WITH s AS (SELECT ta.artist_id FROM track_artists ta WHERE ta.track_id = $1),
             g AS (SELECT tg.genre_id FROM track_genres tg WHERE tg.track_id = $1),
-            al AS (SELECT album_id FROM tracks WHERE id = $1),
-            -- candidatas: mesmo artista (+3), cada gênero em comum (+1), mesmo álbum (+1)
-            cand AS (SELECT DISTINCT ta.track_id AS id, 3 AS s FROM track_artists ta JOIN s ON s.artist_id = ta.artist_id
-                     UNION ALL SELECT tg.track_id, 1 FROM track_genres tg JOIN g ON g.genre_id = tg.genre_id
-                     UNION ALL SELECT t.id, 1 FROM tracks t JOIN al ON al.album_id = t.album_id)
-       SELECT t.id, sum(c.s) AS score
-         FROM cand c JOIN tracks t ON t.id = c.id
-        WHERE t.status = 'active' AND t.id <> $1 AND NOT (t.id = ANY($2::uuid[]))
-        GROUP BY t.id, t.popularity
+            al AS (SELECT album_id FROM tracks WHERE id = $1)
+       SELECT t.id,
+              (CASE WHEN EXISTS (SELECT 1 FROM track_artists ta JOIN s ON s.artist_id = ta.artist_id WHERE ta.track_id = t.id) THEN 3 ELSE 0 END
+             + (SELECT count(*) FROM track_genres tg JOIN g ON g.genre_id = tg.genre_id WHERE tg.track_id = t.id)
+             + CASE WHEN t.album_id = (SELECT album_id FROM al) THEN 1 ELSE 0 END) AS score
+         FROM tracks t WHERE t.status = 'active' AND t.id <> $1 AND NOT (t.id = ANY($2::uuid[]))
         ORDER BY score DESC, random() * (t.popularity + 5) DESC LIMIT $3`,
       [seedId, exclude, limit]
     );
   }
   let tracks = await hydrateTracks(ids(rows), user);
-  if (tracks.length < limit) {
+  if (tracks.length < Math.min(limit, 10)) {
     const fill = await q(
       `SELECT id FROM tracks WHERE status = 'active' AND NOT (id = ANY($1::uuid[])) ORDER BY random() * (popularity + 5) DESC LIMIT $2`,
       [[...exclude, ...tracks.map((t) => t.id)], limit - tracks.length]

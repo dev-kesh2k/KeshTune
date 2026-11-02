@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import QRCode from 'qrcode';
-import { CircleArrowDown, Download, History, ImagePlus, LogOut, MonitorSmartphone, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { Download, History, ImagePlus, LogOut, MonitorSmartphone, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { api, downloadAuthed, errText } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { fmtDate } from '../lib/format';
@@ -13,7 +13,6 @@ import type { Me } from '../lib/types';
 import { Confirm, Cover, Field, Sheet, Spinner, Toggle } from '../components/ui';
 import { pagePad } from '../components/Layout';
 import { PasswordForm } from './ChangePassword';
-import { DownloadSettings } from '../components/DownloadSettings';
 
 function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -191,11 +190,6 @@ export default function Settings() {
             </ul>
           )}
         </Card>
-
-        <section className="card p-4 sm:p-5 lg:col-span-2">
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-bold"><CircleArrowDown className="h-5 w-5" /> Downloads e modo offline</h2>
-          <DownloadSettings />
-        </section>
 
         <section className="card flex flex-wrap gap-2 p-4 sm:p-5 lg:col-span-2">
           <button className="btn-secondary" onClick={logout}><LogOut className="h-4 w-4" /> Sair</button>
