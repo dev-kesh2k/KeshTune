@@ -85,7 +85,8 @@ class StreamResolver @Inject constructor(
     private val urls = LruCache<String, Pair<Uri, Long>>(64)
 
     private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var prefetchJob: Job? = null
+    /** Pedidos adiantados em andamento, por faixa (vários ao mesmo tempo: quem pula duas seguidas não espera). */
+    private val prefetching = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
     private val _converting = MutableStateFlow<ConvertState?>(null)
     /** Faixa que o servidor está convertendo agora (para mostrar "Preparando…"). */
@@ -119,14 +120,22 @@ class StreamResolver @Inject constructor(
      * Pede antes a URL da próxima faixa, para a troca de música não esperar o servidor
      * (e o servidor já começa a preparar o áudio do YouTube).
      */
-    fun prefetch(trackId: String) {
-        prefetchJob?.cancel()
-        prefetchJob = prefetchScope.launch {
-            if (DownloadFiles.file(context, trackId).exists() || fresh(trackId, URL_TTL_MS) != null) return@launch
-            runCatching {
-                // Só a URL: faixa de servidor antigo que exige conversão não é convertida aqui (mostraria "Preparando…")
-                val url = session(trackId).url ?: return@launch
-                urls.put(trackId, "${BuildConfig.APP_URL}api/$url".toUri() to SystemClock.elapsedRealtime())
+    fun prefetch(trackIds: List<String>) {
+        // Desiste das que saíram da lista (pulou para longe); as que continuam seguem sem recomeçar
+        prefetching.keys.filter { it !in trackIds }.forEach { prefetching.remove(it)?.cancel() }
+        for (trackId in trackIds) {
+            if (prefetching[trackId]?.isActive == true) continue
+            prefetching[trackId] = prefetchScope.launch {
+                try {
+                    if (DownloadFiles.file(context, trackId).exists() || fresh(trackId, URL_TTL_MS) != null) return@launch
+                    runCatching {
+                        // Só a URL: faixa de servidor antigo que exige conversão não é convertida aqui (mostraria "Preparando…")
+                        val url = session(trackId).url ?: return@launch
+                        urls.put(trackId, "${BuildConfig.APP_URL}api/$url".toUri() to SystemClock.elapsedRealtime())
+                    }
+                } finally {
+                    prefetching.remove(trackId, coroutineContext[Job])
+                }
             }
         }
     }
