@@ -125,7 +125,7 @@ export function AdminSettings() {
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Aparelhos por conta"><input className="input" type="number" min={1} max={20} value={data.max_offline_devices} onChange={(e) => setData({ ...data, max_offline_devices: Number(e.target.value) })} /></Field>
         <Field label="Faixas baixadas por conta"><input className="input" type="number" min={1} max={10000} value={data.max_offline_tracks} onChange={(e) => setData({ ...data, max_offline_tracks: Number(e.target.value) })} /></Field>
-        <Field label="Validade da licença (dias)"><input className="input" type="number" min={1} max={30} value={data.offline_license_days} onChange={(e) => setData({ ...data, offline_license_days: Number(e.target.value) })} /></Field>
+        <Field label="Validade da licença (dias)"><input className="input" type="number" min={1} max={3650} value={data.offline_license_days} onChange={(e) => setData({ ...data, offline_license_days: Number(e.target.value) })} /></Field>
       </div>
       <p className="text-xs text-muted">Sem anúncios e sem limite de pulos para todas as contas.</p>
       <button className="btn-primary" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
