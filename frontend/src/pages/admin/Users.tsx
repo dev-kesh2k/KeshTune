@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Copy, KeyRound, Lock, ShieldOff, Trash2, Upload, UserPlus } from 'lucide-react';
 import { api, errText } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -32,18 +33,28 @@ export default function Users() {
   const [debounced, setDebounced] = useState('');
   useEffect(() => { const t = setTimeout(() => setDebounced(q), 300); return () => clearTimeout(t); }, [q]);
   const { data, error, loading, reload } = useFetch<{ items: U[] }>(`admin/users?q=${encodeURIComponent(debounced)}&status=${status}`, [debounced, status]);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const [createOpen, setCreateOpen] = useState(params.get('novo') === '1'); // atalho do Painel: /admin/users?novo=1
+  useEffect(() => { if (params.get('novo')) setParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [importOpen, setImportOpen] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
 
   return (
     <div className="pb-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold">Usuários</h2>
+          <p className="text-sm text-muted">Crie contas para quem vai usar o app. Cada pessoa recebe uma senha temporária e troca no primeiro acesso.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4" /> Importar CSV</button>
+          <button className="btn-primary" onClick={() => setCreateOpen(true)}><UserPlus className="h-4 w-4" /> Criar usuário</button>
+        </div>
+      </div>
       <SearchBar value={q} onChange={setQ} placeholder="Buscar por nome ou e-mail">
         <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Situação">
           <option value="all">Todas</option><option value="active">Ativas</option><option value="blocked">Bloqueadas</option>
         </select>
-        <button className="btn-secondary" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4" /> Importar CSV</button>
-        <button className="btn-primary" onClick={() => setCreateOpen(true)}><UserPlus className="h-4 w-4" /> Nova conta</button>
       </SearchBar>
       {loading ? <PageLoading /> : error ? <ErrorBox text={error} onRetry={() => reload()} /> : !data?.items.length ? <Empty title="Nenhuma conta encontrada" /> : (
         <ul className="space-y-2">
@@ -86,7 +97,7 @@ function CreateUser({ open, onClose }: { open: boolean; onClose: () => void }) {
     try { setCreated(await api('admin/users', { body: form })); } catch (e) { toast(errText(e), 'error'); } finally { setBusy(false); }
   };
   return (
-    <Sheet open={open} onClose={onClose} title="Nova conta">
+    <Sheet open={open} onClose={onClose} title="Criar usuário">
       {created ? (
         <div className="space-y-4 pt-2"><TempPassword email={created.email} password={created.temp_password} /><button className="btn-primary w-full" onClick={onClose}>Concluir</button></div>
       ) : (
@@ -98,7 +109,7 @@ function CreateUser({ open, onClose }: { open: boolean; onClose: () => void }) {
               <option value="user">Ouvinte</option><option value="admin">Administrador</option>
             </select>
           </Field>
-          <button className="btn-primary w-full" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Criar conta e gerar senha</button>
+          <button className="btn-primary w-full" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Criar usuário e gerar senha</button>
         </form>
       )}
     </Sheet>

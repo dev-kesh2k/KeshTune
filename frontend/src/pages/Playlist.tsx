@@ -453,7 +453,7 @@ function ShareSheet({ open, onClose, data, onChanged }: { open: boolean; onClose
         <QrBlock url={url} />
         <CopyRow url={url} />
         {'share' in navigator && (
-          <button className="btn-primary w-full" onClick={() => navigator.share({ title: data.name, text: `Ouça "${data.name}" no Spotify X`, url }).catch(() => {})}>
+          <button className="btn-primary w-full" onClick={() => navigator.share({ title: data.name, text: `Ouça "${data.name}" no KeshTune`, url }).catch(() => {})}>
             <Share2 className="h-4 w-4" /> Enviar por…
           </button>
         )}

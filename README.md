@@ -1,4 +1,4 @@
-# Spotify X
+# KeshTune
 
 Streaming de música (web + celular) conforme a especificação técnica — fase 1 (P0).
 
@@ -22,3 +22,18 @@ sudo apt install ffmpeg      # ou: spotdl --download-ffmpeg
 Variáveis opcionais (`backend/.env.example`): `SPOTDL_BIN` (caminho do executável), `SPOTDL_ARGS` (opções extras, ex.: `--client-id X --client-secret Y` com credenciais próprias do Spotify para evitar limite de requisições) e `SPOTDL_TIMEOUT_MIN` (padrão 180).
 
 O áudio vem do YouTube, não do Spotify. Baixar conteúdo do YouTube vai contra os termos de uso dele, e as músicas continuam protegidas por direito autoral. Use apenas com conteúdo que você tem direito de distribuir.
+
+## Ouvir e baixar do YouTube
+
+A busca do app mostra também a seção **Do YouTube**. Tocar um resultado, ou abrir o menu ⋯ dele, cadastra a faixa no catálogo (`source = 'youtube'`, toca pelo player oficial e só online). No menu da faixa, **Baixar (salvar no app)** faz o servidor baixar o áudio com o yt-dlp. A faixa vira arquivo próprio sem trocar de id (curtidas e playlists continuam valendo) e já entra em Downloads para ouvir offline. Código em `backend/src/routes/youtube.js`; os downloads usam a mesma fila da importação do Spotify e aparecem na aba do admin.
+
+- Busca: usa a YouTube Data API quando há `YOUTUBE_API_KEY` (cota gratuita de cerca de 100 buscas por dia; resultados ficam em cache por 6 h). Sem chave, ou quando a cota acaba, usa o yt-dlp.
+- Download: `YTDLP_BIN` (padrão `yt-dlp`, instalado junto com o spotDL) e `YTDLP_ARGS` (ex.: `--ffmpeg-location /usr/bin/ffmpeg`).
+- O admin desliga tudo isso em Configurações → faixas do YouTube.
+
+## Gêneros em alta, "Minhas músicas" e download de playlists
+
+- **Admin → Gêneros → 🔥**: busca no YouTube as músicas em alta do gênero (até 100; yt-dlp primeiro, para poupar a cota da API) e cadastra como faixas do YouTube, que tocam online. Nada é baixado. Os cards de gênero na Busca mostram a capa da música mais popular.
+- **Minhas músicas**: playlist do sistema (`playlists.system_key = 'my_music'`), criada no primeiro download. Recebe cada faixa baixada, com as mais recentes no topo.
+- **Baixar playlist/álbum inteiro**: o botão de download da coleção também baixa as faixas do YouTube (`POST /youtube/downloads` em lote; o servidor baixa uma por vez e o app leva cada uma para Downloads assim que fica pronta).
+- O yt-dlp usa o Node do backend como runtime de JavaScript (`--js-runtimes`); sem isso o YouTube recusa vários vídeos.

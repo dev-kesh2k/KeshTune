@@ -25,7 +25,7 @@ type PlayerState = {
   context: PlayContext | null;
   offlineSource: boolean;
 };
-type PlayerApi = PlayerState & {
+type PlayerApi = Omit<PlayerState, 'position'> & {
   playTracks: (tracks: Track[], start?: number, ctx?: PlayContext) => void;
   toggle: () => void;
   next: () => void;
@@ -45,10 +45,17 @@ type PlayerApi = PlayerState & {
   startRadio: (seedType: 'track' | 'artist' | 'genre', id: string | number, name?: string) => Promise<void>;
   patchTrack: (id: string, patch: Partial<Track>) => void;
   ytHost: React.RefObject<HTMLDivElement>;
+  /** Faixas do YouTube no player em tela cheia: 'video' mostra o clipe grande, 'audio' mostra a capa. */
+  videoMode: 'video' | 'audio';
+  setVideoMode: (m: 'video' | 'audio') => void;
 };
 
 const Ctx = createContext<PlayerApi>(null as unknown as PlayerApi);
 export const usePlayer = () => useContext(Ctx);
+// A posição muda várias vezes por segundo: fica num contexto à parte para só a barra de progresso e a letra
+// se redesenharem (antes, toda tela que usa o player era redesenhada a cada atualização).
+const PosCtx = createContext(0);
+export const usePlayerPosition = () => useContext(PosCtx);
 
 let uidSeq = 0;
 const mkItem = (track: Track): QItem => ({ uid: `${Date.now().toString(36)}-${++uidSeq}`, track });
@@ -99,6 +106,8 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [position, setPosition] = useState<number>(saved?.position || 0);
+  const positionRef = useRef(position);
+  positionRef.current = position;
   const [duration, setDuration] = useState<number>(0);
   const [volume, setVolumeState] = useState<number>(saved?.volume ?? 0.9);
   const [muted, setMuted] = useState(false);
@@ -115,6 +124,13 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
     audio.current.preload = 'auto';
   }
   const ytHost = useRef<HTMLDivElement>(null);
+  const [videoMode, setVideoModeState] = useState<'video' | 'audio'>(() => {
+    try { return localStorage.getItem('spx.videoMode') === 'audio' ? 'audio' : 'video'; } catch { return 'video'; }
+  });
+  const setVideoMode = useCallback((m: 'video' | 'audio') => {
+    setVideoModeState(m);
+    try { localStorage.setItem('spx.videoMode', m); } catch { /* armazenamento indisponível */ }
+  }, []);
   const yt = useRef<any>(null);
   const engine = useRef<'audio' | 'yt' | null>(null);
   const loadSeq = useRef(0);
@@ -445,16 +461,16 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
     }
     const a = audio.current;
     if (!a.src) {
-      load(current, true, position);
+      load(current, true, positionRef.current);
       return;
     }
     if (a.paused) a.play().catch(() => {});
     else a.pause();
-  }, [current, playing, position, load]);
+  }, [current, playing, load]);
 
   const prev = useCallback(() => {
     const { queue: q, index: i } = stateRef.current;
-    if (position > 3000 || i <= 0) {
+    if (positionRef.current > 3000 || i <= 0) {
       if (engine.current === 'yt') yt.current?.seekTo(0, true);
       else if (engine.current === 'audio') audio.current.currentTime = 0;
       else if (q[i]) load(q[i], true);
@@ -463,7 +479,7 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
     report(q[i]?.track, 'skip');
     setIndex(i - 1);
     load(q[i - 1], true);
-  }, [position, load, report]);
+  }, [load, report]);
 
   const seek = useCallback((ms: number) => {
     setPosition(ms);
@@ -595,9 +611,9 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
     set('nexttrack', () => advance(false));
     set('previoustrack', () => prev());
     set('seekto', (d) => d.seekTime !== undefined && seek(d.seekTime * 1000));
-    set('seekbackward', () => seek(Math.max(0, position - 10000)));
-    set('seekforward', () => seek(Math.min(duration, position + 10000)));
-  }, [playing, toggle, advance, prev, seek, position, duration]);
+    set('seekbackward', () => seek(Math.max(0, positionRef.current - 10000)));
+    set('seekforward', () => seek(Math.min(duration, positionRef.current + 10000)));
+  }, [playing, toggle, advance, prev, seek, duration]);
   useEffect(() => {
     if (!('mediaSession' in navigator) || !duration || !navigator.mediaSession.setPositionState) return;
     try {
@@ -617,11 +633,20 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
     return () => window.removeEventListener('pagehide', h);
   }, [report]);
 
-  const value: PlayerApi = {
-    queue, index, current, playing, loading, position, duration: duration || current?.track.duration_ms || 0, volume, muted, shuffle, repeat,
+  const next = useCallback(() => advance(false), [advance]);
+  const dur = duration || current?.track.duration_ms || 0;
+  const value = useMemo<PlayerApi>(() => ({
+    queue, index, current, playing, loading, duration: dur, volume, muted, shuffle, repeat,
     autoRadio, context, offlineSource,
-    playTracks, toggle, next: () => advance(false), prev, seek, setVolume, toggleMute, toggleShuffle, cycleRepeat,
+    playTracks, toggle, next, prev, seek, setVolume, toggleMute, toggleShuffle, cycleRepeat,
     setAutoRadio: setAutoRadioState, addToQueue, playNext, removeFromQueue, moveInQueue, clearUpcoming, jumpTo, startRadio, patchTrack, ytHost,
-  };
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+    videoMode, setVideoMode,
+  }), [queue, index, current, playing, loading, dur, volume, muted, shuffle, repeat, autoRadio, context, offlineSource,
+    playTracks, toggle, next, prev, seek, setVolume, toggleMute, toggleShuffle, cycleRepeat, addToQueue, playNext, removeFromQueue,
+    moveInQueue, clearUpcoming, jumpTo, startRadio, patchTrack, videoMode, setVideoMode]);
+  return (
+    <Ctx.Provider value={value}>
+      <PosCtx.Provider value={position}>{children}</PosCtx.Provider>
+    </Ctx.Provider>
+  );
 }

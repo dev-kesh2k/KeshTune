@@ -1,4 +1,4 @@
-/* Spotify X — cache do "casco" do app para abrir sem internet. A API e o áudio nunca são cacheados aqui. */
+/* KeshTune — cache do "casco" do app para abrir sem internet. A API e o áudio nunca são cacheados aqui. */
 const CACHE = 'spx-shell-v1';
 const BASE = new URL('./', self.location).pathname;
 

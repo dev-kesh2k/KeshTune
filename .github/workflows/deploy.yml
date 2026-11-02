@@ -8,7 +8,7 @@ on:
 
 env:
   SLUG: ${{ github.ref_name == 'main' && 'spotify-x' || 'spotify-x-dev' }}
-  APP_NAME: ${{ github.ref_name == 'main' && 'Spotify X' || 'Spotify X Dev' }}
+  APP_NAME: ${{ github.ref_name == 'main' && 'KeshTune' || 'KeshTune Dev' }}
 
 concurrency:
   group: deploy-${{ github.ref_name }}
