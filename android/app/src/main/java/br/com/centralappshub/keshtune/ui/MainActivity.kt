@@ -15,6 +15,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -161,11 +163,21 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
             downloadGroup = { nav.navigate("downloads/${Uri.encode(it)}") },
         )
     }
+    var homeTaps by remember { mutableIntStateOf(0) }
     val selectTab = { r: String ->
-        nav.navigate(r) {
-            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
+        if (r == "home") {
+            homeTaps++
+            // Início sempre volta para a tela inicial, de qualquer lugar (sem restaurar o artista ou álbum aberto)
+            nav.navigate("home") {
+                popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
+                launchSingleTop = true
+            }
+        } else {
+            nav.navigate(r) {
+                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
         }
     }
     val miniPlayer = @Composable { if (!onPlayer) MiniPlayer(playerVm) { nav.navigate("player") } }
@@ -217,7 +229,7 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
                     popEnterTransition = { EnterTransition.None },
                     popExitTransition = { ExitTransition.None },
                 ) {
-                    composable("home") { HomeScreen(go, player) }
+                    composable("home") { HomeScreen(go, player, homeTaps) }
                     composable("search") { SearchScreen(go, player, playingIdState.value) }
                     composable("library") { LibraryScreen(go) }
                     composable("liked") { LikedScreen(player, playingIdState.value) }
@@ -243,7 +255,7 @@ fun Logo(modifier: Modifier = Modifier, size: Dp = 52.dp) {
     Box(modifier.size(size).shadow(8.dp, shape, spotColor = Kesh.accent).clip(shape)) {
         val zoom = Modifier.fillMaxSize().graphicsLayer(scaleX = 1.5f, scaleY = 1.5f)
         Image(painterResource(R.drawable.ic_launcher_background), null, zoom)
-        Image(painterResource(R.drawable.ic_launcher_foreground), "KeshTune", zoom)
+        Image(painterResource(R.drawable.ic_launcher_foreground), "Kesh Tune", zoom)
     }
 }
 
@@ -253,37 +265,42 @@ fun Logo(modifier: Modifier = Modifier, size: Dp = 52.dp) {
  */
 @Composable
 private fun SideRail(selected: String, onSelect: (String) -> Unit) {
-    Column(
+    BoxWithConstraints(
         Modifier
             .fillMaxHeight()
             .padding(start = 12.dp, top = 12.dp, bottom = 12.dp)
             .width(104.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(Kesh.surface.copy(alpha = 0.75f))
-            .padding(vertical = 16.dp, horizontal = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .background(Kesh.surface.copy(alpha = 0.75f)),
     ) {
-        tabs.forEach { t ->
-            val on = t.route == selected
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(if (on) Kesh.accent.copy(alpha = 0.28f) else Color.Transparent)
-                    .clickable { onSelect(t.route) }
-                    .padding(vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(t.icon, null, tint = if (on) Color.White else Kesh.muted, modifier = Modifier.size(28.dp))
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    t.label,
-                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
-                    color = if (on) Color.White else Kesh.muted,
-                    maxLines = 1,
-                    softWrap = false,
-                )
+        // Tela baixa (celular deitado, algumas centrais): itens mais compactos para os quatro caberem inteiros
+        val compact = maxHeight < 420.dp
+        Column(
+            Modifier.fillMaxSize().padding(vertical = if (compact) 8.dp else 16.dp, horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 10.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            tabs.forEach { t ->
+                val on = t.route == selected
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (on) Kesh.accent.copy(alpha = 0.28f) else Color.Transparent)
+                        .clickable { onSelect(t.route) }
+                        .padding(vertical = if (compact) 7.dp else 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(t.icon, null, tint = if (on) Color.White else Kesh.muted, modifier = Modifier.size(if (compact) 24.dp else 28.dp))
+                    Spacer(Modifier.height(if (compact) 3.dp else 6.dp))
+                    Text(
+                        t.label,
+                        style = MaterialTheme.typography.labelLarge.copy(fontSize = if (compact) 12.sp else 13.sp),
+                        color = if (on) Color.White else Kesh.muted,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
             }
         }
     }
