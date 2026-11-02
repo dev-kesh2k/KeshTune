@@ -247,7 +247,7 @@ export async function probeAudio(file) {
   let cover_url = null;
   const pic = c.picture?.[0];
   if (pic?.data) {
-    try { cover_url = saveImage(Buffer.from(pic.data)); } catch { /* capa embutida em formato não suportado */ }
+    try { cover_url = await saveImage(Buffer.from(pic.data)); } catch { /* capa embutida em formato não suportado */ }
   }
   const lyrics = Array.isArray(c.lyrics) && c.lyrics.length
     ? c.lyrics.map((l) => (typeof l === 'string' ? l : l.text || (l.syncText || []).map((s) => s.text).join('\n'))).filter(Boolean).join('\n')

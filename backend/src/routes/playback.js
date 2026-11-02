@@ -5,6 +5,7 @@ import { one, q } from '../db.js';
 import { auth, signStream, verifyStream } from '../security.js';
 import { ah, bad, isUuid, notFound, oneOf, rateLimiter, uuidParam } from '../util.js';
 import { AUDIO_DIR } from './media.js';
+import { warmYoutube } from './youtube.js'; // só usada em tempo de execução (nada roda no carregamento)
 
 export const playbackRouter = express.Router();
 
@@ -18,7 +19,9 @@ playbackRouter.post('/playback/session', auth(), ah(async (req, res) => {
   if (t.explicit && req.user.explicit_allowed === false) throw bad('Conteúdo explícito bloqueado nas suas configurações', 'EXPLICIT_BLOCKED');
   const s = signStream(id, req.user.id, 3600);
   if (t.source === 'youtube') {
-    // O web toca pelo player incorporado (video_id); o app nativo toca a url, que o servidor repassa do YouTube
+    // O web toca pelo player incorporado (video_id); o app nativo toca a url, que o servidor repassa do YouTube.
+    // Já descobre a URL do áudio enquanto a resposta vai ao app (o yt-dlp leva alguns segundos)
+    warmYoutube(t.youtube_id);
     return res.json({
       session_id: `ps_${Date.now().toString(36)}`, source: 'youtube', video_id: t.youtube_id, ads_before: false,
       url: `youtube/stream/${id}?u=${s.u}&exp=${s.exp}&sig=${s.sig}`, expires_at: new Date(s.exp * 1000).toISOString(),

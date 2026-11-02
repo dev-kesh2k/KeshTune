@@ -59,12 +59,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.runtime.Stable
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import br.com.centralappshub.keshtune.data.Track
 import br.com.centralappshub.keshtune.data.YtResult
 import br.com.centralappshub.keshtune.playback.PlayerConnection
 
 /** Ações de navegação compartilhadas pelas telas. */
+@Stable
 class Nav(
     val album: (String) -> Unit,
     val artist: (String) -> Unit,
@@ -131,7 +135,15 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
 
 @Composable
 fun HomeScreen(nav: Nav, player: PlayerConnection, vm: HomeViewModel = hiltViewModel()) {
-    LaunchedEffect(Unit) { vm.refreshIfStale() }
+    // Só atualiza com a Início visível (no Navigation Compose o owner é o NavBackStackEntry): ao voltar
+    // para ela, se a lista estiver velha, e quando a internet volta; em outra tela ou em segundo plano, nada
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(owner) {
+        owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            vm.refreshIfStale()
+            vm.watchReconnect()
+        }
+    }
     when (val s = vm.state.collectAsStateWithLifecycle().value) {
         Ui.Loading -> Loading()
         is Ui.Error -> ErrorBox(s.message, vm::refresh)
@@ -185,7 +197,7 @@ fun SearchScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: Sea
     Column(Modifier.fillMaxSize()) {
         Text("Buscar", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(start = 20.dp, top = 16.dp))
         TextField(
-            s.query, vm::onQuery,
+            s.query, { vm.onQuery(it) },
             placeholder = { Text("Músicas, artistas, álbuns ou YouTube") },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = Kesh.accentSoft) },
             trailingIcon = { if (s.query.isNotEmpty()) IconButton({ vm.onQuery("") }) { Icon(Icons.Default.Clear, "Limpar") } },
@@ -196,17 +208,19 @@ fun SearchScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: Sea
                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
             ),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            // Tecla Buscar: busca na hora, sem esperar a digitação parar
+            keyboardActions = KeyboardActions(onSearch = { vm.onQuery(s.query, now = true) }),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).height(60.dp).focusRequester(focus),
         )
         message?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
         val r = s.result
         when {
             s.loading && s.youtube.isEmpty() -> Loading()
-            s.error != null && r == null && s.youtube.isEmpty() -> ErrorBox(s.error!!) { vm.onQuery(s.query) }
+            s.error != null && r == null && s.youtube.isEmpty() -> ErrorBox(s.error!!) { vm.onQuery(s.query, now = true) }
             else -> LazyColumn(Modifier.fillMaxSize()) {
                 if (s.youtube.isNotEmpty()) {
                     item { SectionTitle("Do YouTube") }
-                    itemsIndexed(s.youtube, key = { _, y -> "y:" + y.youtubeId }) { _, y -> YoutubeRow(y) { vm.playYoutube(y) } }
+                    itemsIndexed(s.youtube, key = { _, y -> "y:" + y.youtubeId }, contentType = { _, _ -> "youtube" }) { _, y -> YoutubeRow(y) { vm.playYoutube(y) } }
                 }
                 if (r != null) {
                     shelf("Álbuns", r.albums) { AlbumCardView(it) { nav.album(it.id) } }
@@ -263,7 +277,7 @@ fun LibraryScreen(nav: Nav, vm: LibraryViewModel = hiltViewModel()) {
         }
         item { LibraryRow("Baixadas", "Tocam sem internet", null, icon = Icons.Default.DownloadForOffline, onClick = nav.downloads) }
         if (s is Ui.Error && playlists.isEmpty()) item { Text((s as Ui.Error).message, color = Kesh.muted, modifier = Modifier.padding(16.dp)) }
-        itemsIndexed(playlists, key = { _, p -> p.id }) { _, p ->
+        itemsIndexed(playlists, key = { _, p -> p.id }, contentType = { _, _ -> "playlist" }) { _, p ->
             LibraryRow(p.name, listOfNotNull("Playlist", p.ownerName).joinToString(" • "), p.image) { nav.playlist(p.id) }
         }
         if (lib != null) {
@@ -310,8 +324,9 @@ private fun TrackListScreen(
     trailing: (@Composable (Track) -> Unit)? = null,
 ) {
     LazyColumn(Modifier.fillMaxSize()) {
-        item { header() }
-        itemsIndexed(tracks, key = { i, t -> "$i:${t.id}" }) { i, t ->
+        item(key = "header", contentType = "header") { header() }
+        // A key leva o índice: uma playlist pode repetir a mesma faixa
+        itemsIndexed(tracks, key = { i, t -> "$i:${t.id}" }, contentType = { _, _ -> "track" }) { i, t ->
             TrackRow(t, t.id == playingId, trailing = trailing?.let { { it(t) } }) { player.play(tracks, i) }
         }
         footer()
@@ -375,12 +390,12 @@ fun ArtistScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: Art
 fun PlaylistScreen(player: PlayerConnection, playingId: String?, vm: PlaylistViewModel = hiltViewModel()) {
     val downloads = LocalDownloads.current
     val local by vm.header.collectAsStateWithLifecycle()
-    val cached by vm.tracks.collectAsStateWithLifecycle()
+    // Playlist da biblioteca abre pela cópia local; as outras (públicas) só pela rede (escolha feita no VM)
+    val tracks by vm.playTracks.collectAsStateWithLifecycle()
     val s by vm.state.collectAsStateWithLifecycle()
     val remote = (s as? Ui.Ok)?.data
-    // Playlist da biblioteca abre pela cópia local; as outras (públicas) só pela rede
-    val tracks = remote?.items?.map { it.track } ?: cached
     val name = remote?.name ?: local?.name
+    val anyPlayable = remember(tracks) { tracks.any { it.playable } }
     when {
         name == null && s is Ui.Error -> ErrorBox((s as Ui.Error).message, vm::refresh)
         name == null -> Loading()
@@ -388,7 +403,7 @@ fun PlaylistScreen(player: PlayerConnection, playingId: String?, vm: PlaylistVie
             CollectionHeader(
                 remote?.coverUrl ?: remote?.mosaic?.firstOrNull() ?: local?.image, "Playlist", name,
                 listOfNotNull(remote?.ownerName ?: local?.ownerName, "${tracks.size} músicas").joinToString(" • "),
-                enabled = tracks.any { it.playable },
+                enabled = anyPlayable,
                 onPlay = { player.play(tracks) },
                 onShuffle = { player.play(tracks, shuffle = true) },
                 onDownload = { downloads?.enqueue(tracks) },

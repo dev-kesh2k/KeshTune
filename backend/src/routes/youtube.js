@@ -19,6 +19,7 @@ const YTDLP = process.env.YTDLP_BIN || 'yt-dlp';
 const CACHE_MS = 6 * 3600 * 1000;
 const cache = new Map(); // busca normalizada -> { at, items }
 const known = new Map(); // youtube_id -> metadados vistos na busca (para cadastrar sem nova consulta)
+const inflight = new Map(); // busca normalizada -> promise (a mesma busca repetida espera a primeira, sem rodar outra)
 
 const thumb = (id) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 const decode = (s) => String(s || '').replace(/&(amp|quot|#39|lt|gt);/g, (_m, e) => ({ amp: '&', quot: '"', '#39': "'", lt: '<', gt: '>' })[e]);
@@ -72,22 +73,28 @@ async function searchYtdlp(text, n = 12) {
 }
 
 async function searchYoutube(text) {
+  text = text.trim();
   const key = text.toLowerCase();
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.items;
-  let items = null;
-  if (API_KEY) {
-    try { items = await searchApi(text); } catch (e) { console.error('[youtube] API:', e.message); }
-  }
-  if (!items) {
-    if (!(await detect('youtube')).available) throw bad('Busca no YouTube indisponível (sem YOUTUBE_API_KEY e sem yt-dlp no servidor)', 'YOUTUBE_UNAVAILABLE');
-    try { items = await searchYtdlp(text); } catch (e) { console.error('[youtube] yt-dlp:', e.message); throw bad('Não foi possível buscar no YouTube agora'); }
-  }
-  for (const i of items) known.set(i.youtube_id, i);
-  while (known.size > 5000) known.delete(known.keys().next().value);
-  cache.set(key, { at: Date.now(), items });
-  while (cache.size > 300) cache.delete(cache.keys().next().value);
-  return items;
+  if (inflight.has(key)) return inflight.get(key);
+  const p = (async () => {
+    let items = null;
+    if (API_KEY) {
+      try { items = await searchApi(text); } catch (e) { console.error('[youtube] API:', e.message); }
+    }
+    if (!items) {
+      if (!(await detect('youtube')).available) throw bad('Busca no YouTube indisponível (sem YOUTUBE_API_KEY e sem yt-dlp no servidor)', 'YOUTUBE_UNAVAILABLE');
+      try { items = await searchYtdlp(text); } catch (e) { console.error('[youtube] yt-dlp:', e.message); throw bad('Não foi possível buscar no YouTube agora'); }
+    }
+    for (const i of items) known.set(i.youtube_id, i);
+    while (known.size > 5000) known.delete(known.keys().next().value);
+    cache.set(key, { at: Date.now(), items });
+    while (cache.size > 300) cache.delete(cache.keys().next().value);
+    return items;
+  })();
+  inflight.set(key, p);
+  try { return await p; } finally { inflight.delete(key); }
 }
 
 /** Muitos resultados de uma vez (carga de gêneros): yt-dlp primeiro para não gastar a cota da API. */
@@ -197,7 +204,7 @@ async function findArtistImage(name) {
   if (!/^https:\/\/yt3\.(ggpht|googleusercontent)\.com\//.test(url)) return null;
   const r = await fetch(url.replace(/=s\d+-/, '=s400-'), { signal: AbortSignal.timeout(10000) });
   if (!r.ok || Number(r.headers.get('content-length') || 0) > 3 * 1024 * 1024) return null;
-  return saveImage(Buffer.from(await r.arrayBuffer()));
+  return await saveImage(Buffer.from(await r.arrayBuffer()));
 }
 
 let imagesBusy = false;
@@ -233,6 +240,8 @@ export async function fillArtistImages() {
 export function startArtistImageWorker() {
   setInterval(() => fillArtistImages().catch((e) => console.error('[artist-image]', e.message)), 10 * 60 * 1000).unref();
   setTimeout(() => fillArtistImages().catch((e) => console.error('[artist-image]', e.message)), 30000).unref();
+  // Parada dos artistas em alta já pronta antes do primeiro Início (a busca roda em segundo plano)
+  setTimeout(() => trendingArtistsBR(null).catch(() => {}), 5000).unref();
 }
 
 async function catalogMatches(ids) {
@@ -253,14 +262,19 @@ export const youtubeRouter = express.Router();
 
 // ----- Áudio direto do YouTube (app nativo) -----
 // O app não toca o player incorporado: o servidor descobre a URL do áudio com o yt-dlp e repassa os bytes (com Range,
-// para avançar). Toca em poucos segundos, sem esperar a conversão para MP3, que segue na fila para as próximas vezes.
+// para avançar). Toca em poucos segundos, sem esperar a gravação do áudio como arquivo próprio (no formato original),
+// que segue na fila para as próximas vezes.
 // A URL do googlevideo vale só para o IP que a pediu, por isso o servidor repassa em vez de entregar a URL ao app.
-const direct = new Map(); // youtube_id -> { at, promise: { url, mime } }
-const DIRECT_MS = 2 * 3600 * 1000;
+const direct = new Map(); // youtube_id -> { until, promise: { url, mime } }
+const DIRECT_MS = 2 * 3600 * 1000; // validade quando a URL não diz quando vence
 
+/**
+ * URL do áudio pelo yt-dlp (alguns segundos), guardada até perto de vencer: a própria URL traz o "expire".
+ * O acerto de cache volta com cached: true (a URL pode ter sido recusada depois; quem chama pode pedir outra com force).
+ */
 function directAudio(vid, force = false) {
   const hit = direct.get(vid);
-  if (!force && hit && Date.now() - hit.at < DIRECT_MS) return hit.promise;
+  if (!force && hit && hit.until > Date.now()) return hit.until === Infinity ? hit.promise : hit.promise.then((a) => ({ ...a, cached: true }));
   const promise = new Promise((resolve, reject) => {
     execFile(
       YTDLP,
@@ -273,13 +287,23 @@ function directAudio(vid, force = false) {
       }
     );
   });
-  direct.set(vid, { at: Date.now(), promise });
-  promise.catch(() => direct.delete(vid));
+  const entry = { until: Infinity, promise }; // pendente: quem chegar espera a mesma consulta
+  direct.set(vid, entry);
+  promise.then((a) => {
+    let exp = 0;
+    try { exp = Number(new URL(a.url).searchParams.get('expire')) * 1000; } catch { /* sem expire legível */ }
+    entry.until = exp > Date.now() ? exp - 10 * 60 * 1000 : Date.now() + DIRECT_MS;
+  }, () => { if (direct.get(vid) === entry) direct.delete(vid); });
   while (direct.size > 500) direct.delete(direct.keys().next().value);
   return promise;
 }
 
-/** Converte para MP3 sem pressa (pista normal), se ainda não houver conversão pedida para a faixa. */
+/** Já descobre a URL do áudio antes de o app pedir o stream (o yt-dlp leva alguns segundos). */
+export function warmYoutube(vid) {
+  if (vid) directAudio(vid).catch(() => {});
+}
+
+/** Grava o áudio como arquivo próprio sem pressa (pista normal), se ainda não houver gravação pedida para a faixa. */
 async function queueConversion(t, userId) {
   const pending = await one(`SELECT 1 FROM import_jobs WHERE track_id = $1 AND status IN ('queued','running')`, [t.id]);
   if (!pending) await enqueueJob({ kind: 'youtube', url: `https://www.youtube.com/watch?v=${t.youtube_id}`, trackId: t.id, userId });
@@ -298,15 +322,40 @@ youtubeRouter.get('/youtube/stream/:id', ah(async (req, res) => {
   // Só no começo da música (o player faz vários pedidos com Range ao avançar)
   const fromStart = !req.headers.range || /^bytes=0-/.test(req.headers.range);
   if (t.source === 'youtube' && fromStart) queueConversion(t, req.query.u).catch(() => {});
-  const ac = new AbortController();
-  res.on('close', () => ac.abort());
+  // Upstream ligado à conexão do app: se o player desistir (pulou de faixa), para de baixar do googlevideo.
+  // Um AbortController por tentativa (o da anterior pode ter sido abortado pelo prazo)
+  let closed = false;
+  let ac = null;
+  res.on('close', () => {
+    closed = true;
+    ac?.abort();
+  });
+  let fresh = false;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const a = await directAudio(t.youtube_id, attempt > 0);
+    const a = await directAudio(t.youtube_id, fresh);
+    if (closed) return;
+    ac = new AbortController();
+    // Só a espera pelos cabeçalhos tem limite (internet instável); o corpo segue enquanto o player ler
+    const t0 = setTimeout(() => ac.abort('timeout'), 10000);
     const up = await fetch(a.url, { headers: req.headers.range ? { Range: req.headers.range } : {}, signal: ac.signal }).catch(() => null);
-    // URL vencida ou recusada: pede outra ao yt-dlp uma vez
-    if (!up || up.status === 403 || up.status === 410) {
-      await up?.body?.cancel().catch(() => {});
+    clearTimeout(t0);
+    if (closed) return;
+    // Falha de rede ou demora até o googlevideo (passageiras): tenta mais uma vez com a mesma URL, que não foi recusada
+    if (!up) {
       if (attempt === 0) continue;
+      if (ac.signal.reason === 'timeout') {
+        if (!res.headersSent) res.status(502).json({ error: { code: 'YT_STREAM_FAILED', message: 'O YouTube demorou para responder' } });
+        return;
+      }
+      throw bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED');
+    }
+    // URL vencida ou recusada: se veio do cache, pede outra ao yt-dlp uma vez
+    if (up.status === 403 || up.status === 410) {
+      await up.body?.cancel().catch(() => {});
+      if (attempt === 0 && a.cached) {
+        fresh = true;
+        continue;
+      }
       throw bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED');
     }
     if (up.status === 416) {
@@ -360,7 +409,10 @@ youtubeRouter.post('/youtube/tracks', ah(async (req, res) => {
     }, req.user.id));
     await audit(req, 'track.youtube_add', 'track', id, { youtube_id: vid, title });
   }
+  // Tocar costuma vir logo em seguida: já descobre a URL do áudio (faixa que já é arquivo não precisa). Só para o
+  // app nativo (warm=1), que toca pelo stream; o site toca pelo player incorporado e não precisa do yt-dlp
   const [track] = await hydrateTracks([id], req.user);
+  if (track?.source !== 'file' && req.query.warm === '1') warmYoutube(vid);
   res.status(201).json(track);
 }));
 
@@ -432,8 +484,10 @@ async function ensureTracks(videos, userId, genreId = null, { convert = true } =
 
 // Parada pública da Apple Music (as 50 mais tocadas no Brasil hoje); não precisa de chave nem gasta cota do YouTube
 const CHART_URL = 'https://rss.marketingtools.apple.com/api/v2/br/music/most-played/50/songs.json';
+const CHART_RETRY = 30 * 60 * 1000; // parada fora do ar: nova tentativa só depois disso
 let chart = { at: 0, ids: [] };
 let chartBusy = null;
+let chartFailAt = 0;
 
 /**
  * Nome do artista principal de cada música da parada. Duplas vêm como "Zé Neto & Cristiano" e participações como
@@ -452,27 +506,35 @@ function chartArtists(results) {
   return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
 }
 
-/** Top 10 artistas em alta no Brasil, como artistas do catálogo (cadastra os que faltam). Atualiza a cada 6 h. */
+/**
+ * Top 10 artistas em alta no Brasil, como artistas do catálogo (cadastra os que faltam). Atualiza a cada 6 h.
+ * Não espera a parada: devolve na hora a última lista ([] na primeira vez) e atualiza em segundo plano.
+ */
 export async function trendingArtistsBR(userId) {
-  if (chart.ids.length && Date.now() - chart.at < 6 * 3600 * 1000) return chart.ids;
-  chartBusy ??= (async () => {
-    const r = await fetch(CHART_URL, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) throw new Error(`parada ${r.status}`);
-    const names = chartArtists((await r.json()).feed?.results || []).slice(0, 10);
-    const ids = [];
-    for (const n of names) ids.push(await findOrCreateArtist({ q, one }, n.slice(0, 200)));
-    chart = { at: Date.now(), ids };
-    setTimeout(() => fillArtistImages().catch(() => {}), 1000);
-    // Deixa o top 50 desses artistas pronto antes de alguém abrir (um por vez)
-    (async () => {
-      for (const id of ids) {
-        const a = await one(`SELECT id, name, top_fetched_at FROM artists WHERE id = $1`, [id]);
-        if (a && topStale(a)) await artistTop(a, userId).catch((e) => console.error('[artist-top]', a.name, e.message));
-      }
-    })();
-    return ids;
-  })().finally(() => { chartBusy = null; });
-  return chartBusy;
+  const fresh = chart.ids.length && Date.now() - chart.at < 6 * 3600 * 1000;
+  if (!fresh && !chartBusy && Date.now() - chartFailAt > CHART_RETRY) {
+    chartBusy = (async () => {
+      const r = await fetch(CHART_URL, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error(`parada ${r.status}`);
+      const names = chartArtists((await r.json()).feed?.results || []).slice(0, 10);
+      if (!names.length) throw new Error('parada vazia');
+      const ids = [];
+      for (const n of names) ids.push(await findOrCreateArtist({ q, one }, n.slice(0, 200)));
+      chart = { at: Date.now(), ids };
+      setTimeout(() => fillArtistImages().catch(() => {}), 1000);
+      // Deixa o top 50 desses artistas pronto antes de alguém abrir (um por vez)
+      (async () => {
+        for (const id of ids) {
+          const a = await one(`SELECT id, name, top_fetched_at FROM artists WHERE id = $1`, [id]);
+          if (a && topStale(a)) await artistTop(a, userId).catch((e) => console.error('[artist-top]', a.name, e.message));
+        }
+      })().catch((e) => console.error('[artist-top]', e.message));
+    })().catch((e) => {
+      chartFailAt = Date.now();
+      console.error('[home] artistas em alta:', e.message);
+    }).finally(() => { chartBusy = null; });
+  }
+  return chart.ids;
 }
 
 export const topStale = (a) => !a.top_fetched_at || Date.now() - new Date(a.top_fetched_at).getTime() > 7 * 86400000;
@@ -513,7 +575,14 @@ export function artistTop(artist, userId) {
       }
       await db.q(`UPDATE artists SET top_fetched_at = now() WHERE id = $1`, [artist.id]);
     });
-  })().finally(() => topBusy.delete(artist.id));
+  })().catch(async (e) => {
+    // Falhou na primeira vez (yt-dlp fora, rede): tenta de novo em 30 min, em vez de a cada abertura do artista
+    await q(
+      `UPDATE artists SET top_fetched_at = now() - interval '7 days' + interval '30 minutes' WHERE id = $1 AND top_fetched_at IS NULL`,
+      [artist.id]
+    ).catch(() => {});
+    throw e;
+  }).finally(() => topBusy.delete(artist.id));
   topBusy.set(artist.id, p);
   return p;
 }

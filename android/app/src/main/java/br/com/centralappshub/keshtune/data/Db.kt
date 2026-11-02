@@ -69,6 +69,9 @@ class Converters {
     fun stringToArtists(v: String): List<ArtistRef> = runCatching { json.decodeFromString<List<ArtistRef>>(v) }.getOrDefault(emptyList())
 }
 
+/** Máximo de ids por consulta IN (...): o SQLite do Android 7-10 aceita até 999 parâmetros. */
+private const val CHUNK = 500
+
 @Dao
 interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -76,6 +79,22 @@ interface LibraryDao {
 
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun track(id: String): TrackEntity?
+
+    @Query("SELECT * FROM tracks WHERE id IN (:ids)")
+    suspend fun tracksByIds(ids: List<String>): List<TrackEntity>
+
+    /**
+     * Grava só as faixas novas ou que mudaram: o REPLACE regravaria tudo (e acordaria todos os Flows)
+     * a cada atualização. Em blocos de 500 por causa do limite de 999 parâmetros do SQLite no Android 7-10.
+     */
+    @Transaction
+    suspend fun upsertChangedTracks(tracks: List<TrackEntity>) {
+        for (chunk in tracks.distinctBy { it.id }.chunked(CHUNK)) {
+            val existing = tracksByIds(chunk.map { it.id }).associateBy { it.id }
+            val changed = chunk.filter { existing[it.id] != it }
+            if (changed.isNotEmpty()) upsertTracks(changed)
+        }
+    }
 
     @Query("SELECT * FROM playlists ORDER BY sortOrder")
     fun playlists(): Flow<List<PlaylistEntity>>
@@ -101,12 +120,17 @@ interface LibraryDao {
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :id")
     suspend fun clearPlaylistTracks(id: String)
 
+    @Query("SELECT trackId FROM playlist_tracks WHERE playlistId = :id ORDER BY position")
+    suspend fun playlistTrackIds(id: String): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTracks(items: List<PlaylistTrackEntity>)
 
     @Transaction
     suspend fun replacePlaylistTracks(id: String, tracks: List<Track>) {
-        upsertTracks(tracks.map { it.toEntity() })
+        upsertChangedTracks(tracks.map { it.toEntity() })
+        // Mesma ordem de antes: não mexe (evita reemitir a lista da playlist sem mudança)
+        if (playlistTrackIds(id) == tracks.map { it.id }) return
         clearPlaylistTracks(id)
         insertPlaylistTracks(tracks.mapIndexed { i, t -> PlaylistTrackEntity(id, i, t.id) })
     }
@@ -126,11 +150,24 @@ interface LibraryDao {
     @Query("DELETE FROM liked")
     suspend fun clearLiked()
 
+    @Query("SELECT trackId FROM liked ORDER BY sortOrder DESC")
+    suspend fun likedIds(): List<String>
+
+    @Query("DELETE FROM liked WHERE trackId IN (:ids)")
+    suspend fun deleteLikedIn(ids: List<String>)
+
+    @Query("SELECT COUNT(*) FROM liked")
+    suspend fun likedCount(): Int
+
     @Transaction
     suspend fun replaceLiked(tracks: List<Track>) {
-        upsertTracks(tracks.map { it.toEntity() })
-        clearLiked()
-        // A API manda das mais recentes para as mais antigas
+        upsertChangedTracks(tracks.map { it.toEntity() })
+        // A API manda das mais recentes para as mais antigas; mesma lista na mesma ordem: nada a gravar
+        val newIds = tracks.map { it.id }
+        val oldIds = likedIds()
+        if (oldIds == newIds) return
+        val keep = newIds.toHashSet()
+        oldIds.filter { it !in keep }.chunked(CHUNK).forEach { deleteLikedIn(it) }
         insertLiked(tracks.mapIndexed { i, t -> LikedEntity(t.id, (tracks.size - i).toLong()) })
     }
 

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -35,6 +36,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,24 +58,25 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import br.com.centralappshub.keshtune.playback.ConvertState
 
+/** Fundo do mini player, criado uma vez só. */
+private val MiniBrush = Brush.horizontalGradient(listOf(Color(0xFF2B1D52), Color(0xFF1C1830), Kesh.surface2))
+
 /** Cartão flutuante com a música atual; tocar abre o player em tela cheia. */
 @Composable
 fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val item = s.current ?: return
-    val progress by vm.progress.collectAsStateWithLifecycle(0L to 0L)
     val converting by vm.converting.collectAsStateWithLifecycle()
     val meta = item.mediaMetadata
     val shape = RoundedCornerShape(24.dp)
-    val (pos, dur) = progress
 
     Box(
         Modifier
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .fillMaxWidth()
-            .shadow(18.dp, shape)
+            .shadow(4.dp, shape)
             .clip(shape)
-            .background(Brush.horizontalGradient(listOf(Color(0xFF2B1D52), Color(0xFF1C1830), Kesh.surface2)))
+            .background(MiniBrush)
             .clickable(onClick = onOpen),
     ) {
         Column {
@@ -95,16 +99,23 @@ fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
                 PlayPause(s.isPlaying, s.buffering, 54.dp) { vm.player.toggle() }
                 IconButton(vm.player::next, Modifier.size(56.dp)) { Icon(Icons.Default.SkipNext, "Próxima", Modifier.size(32.dp)) }
             }
-            ThinProgress(if (dur > 0) pos.toFloat() / dur else 0f, Modifier.padding(horizontal = 18.dp).padding(bottom = 8.dp))
+            MiniProgress(vm, Modifier.padding(horizontal = 18.dp).padding(bottom = 8.dp))
         }
     }
+}
+
+/** Progresso do mini player isolado: a posição muda a cada meio segundo e só esta linha é redesenhada. */
+@Composable
+private fun MiniProgress(vm: PlayerViewModel, modifier: Modifier) {
+    val progress = vm.progress.collectAsStateWithLifecycle(0L to 0L)
+    ThinProgress({ val (p, d) = progress.value; if (d > 0) p.toFloat() / d else 0f }, modifier)
 }
 
 /** Botão branco redondo (tocar/pausar), com indicador enquanto carrega. */
 @Composable
 private fun PlayPause(playing: Boolean, buffering: Boolean, size: Dp, onClick: () -> Unit) {
     Box(
-        Modifier.size(size).shadow(10.dp, CircleShape).clip(CircleShape).background(Color.White).clickable(onClick = onClick),
+        Modifier.size(size).clip(CircleShape).background(Color.White).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (buffering && !playing) {
@@ -138,7 +149,7 @@ fun NowPlayingScreen(vm: PlayerViewModel, onClose: () -> Unit) {
             val h = maxHeight
             val wide = w > h
             val art: @Composable (Dp) -> Unit = { side ->
-                Cover(artUrl, side, modifier = Modifier.shadow(32.dp, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp))
+                Cover(artUrl, side, modifier = Modifier.shadow(8.dp, RoundedCornerShape(28.dp)), shape = RoundedCornerShape(28.dp))
             }
             val controls: @Composable (Modifier) -> Unit = { mod ->
                 Column(mod, verticalArrangement = Arrangement.Center) {
@@ -243,28 +254,41 @@ private fun NowPlayingDownload(trackId: String, vm: PlayerViewModel) {
             trackId in done -> Icon(Icons.Default.DownloadDone, "Baixada", tint = Kesh.accentSoft, modifier = Modifier.size(28.dp))
             progress != null && progress > 0f ->
                 CircularProgressIndicator(progress = { progress }, modifier = Modifier.size(28.dp), strokeWidth = 3.dp, trackColor = Kesh.line)
-            progress != null -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+            // Mesma regra do DownloadButton: -1f baixando sem porcentagem, 0f na fila
+            progress != null && progress < 0f -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+            progress != null -> Icon(Icons.Default.Schedule, "Na fila", tint = Kesh.muted, modifier = Modifier.size(28.dp))
             else -> Icon(Icons.Default.Download, "Baixar", Modifier.size(28.dp))
         }
     }
 }
 
+/**
+ * Barra e tempos do player. A posição (a cada meio segundo) só é lida no draw da barra e no texto do tempo
+ * atual, que recompõe uma vez por segundo; o resto só recompõe quando a duração muda.
+ */
 @Composable
 private fun Seekbar(vm: PlayerViewModel) {
-    val progress by vm.progress.collectAsStateWithLifecycle(0L to 0L)
-    val (pos, dur) = progress
+    val progress = vm.progress.collectAsStateWithLifecycle(0L to 0L)
+    val dur by remember { derivedStateOf { progress.value.second } }
     var dragging by remember { mutableStateOf<Float?>(null) }
     SeekBar(
-        fraction = if (dur > 0) pos.toFloat() / dur else 0f,
+        fraction = { val (p, d) = progress.value; if (d > 0) p.toFloat() / d else 0f },
         enabled = dur > 0,
         onSeek = { vm.player.seekTo((it * dur).toLong()) },
         onDrag = { dragging = it },
     )
     Row(Modifier.fillMaxWidth()) {
-        Text(fmtTime(dragging?.let { (it * dur).toLong() } ?: pos), color = Kesh.muted, style = MaterialTheme.typography.bodyMedium)
+        CurrentTime(progress) { dragging }
         Spacer(Modifier.weight(1f))
         Text(fmtTime(dur), color = Kesh.muted, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+/** Tempo atual (ou o do ponto arrastado), em segundos inteiros: só recompõe quando o segundo muda. */
+@Composable
+private fun CurrentTime(progress: State<Pair<Long, Long>>, dragging: () -> Float?) {
+    val sec by remember { derivedStateOf { (dragging()?.let { (it * progress.value.second).toLong() } ?: progress.value.first) / 1000 } }
+    Text(fmtTime(sec * 1000), color = Kesh.muted, style = MaterialTheme.typography.bodyMedium)
 }
 
 @Composable

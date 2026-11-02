@@ -9,12 +9,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import br.com.centralappshub.keshtune.R
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -44,6 +51,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -60,6 +68,8 @@ import br.com.centralappshub.keshtune.playback.DownloadManager
 import br.com.centralappshub.keshtune.playback.PlayerConnection
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -76,15 +86,19 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
         }
-        player.connect()
         setContent {
             KeshTheme {
                 val loggedIn by tokens.loggedIn.collectAsStateWithLifecycle()
                 if (loggedIn) CompositionLocalProvider(LocalDownloads provides downloads) { AppShell(player, downloads) } else Scaffold { pad -> Column(Modifier.padding(pad)) { LoginScreen() } }
             }
         }
+        // O Compose pinta a tela inteira: o fundo da janela só gastaria um preenchimento a mais por quadro (overdraw)
+        window.setBackgroundDrawable(null)
     }
 }
+
+/** Fundo do app: um brilho roxo no topo, em vez do preto chapado. Criado uma vez só. */
+private val ShellBrush = Brush.verticalGradient(0f to Color(0xFF1A1233), 0.45f to Kesh.bg)
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -98,8 +112,10 @@ private val tabs = listOf(
 private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
     val nav = rememberNavController()
     val playerVm: PlayerViewModel = hiltViewModel()
-    val playerState by playerVm.state.collectAsStateWithLifecycle()
-    val playingId = playerState.current?.mediaId
+    // Só o id da faixa atual, e sem `by`: o NavHost lê o valor dentro de cada tela, então tocar, pausar ou
+    // carregar não recompõe o AppShell nem recria o grafo de navegação
+    val playingIdState = remember(playerVm) { playerVm.state.map { it.current?.mediaId }.distinctUntilChanged() }
+        .collectAsStateWithLifecycle(initialValue = playerVm.state.value.current?.mediaId)
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val onPlayer = route == "player"
@@ -107,6 +123,12 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val snackbar = remember { SnackbarHostState() }
 
+    // Liga ao serviço de música depois do primeiro quadro, para não atrasar a abertura do app.
+    // O connect() ignora chamadas repetidas e os comandos esperam o controller ficar pronto.
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        player.connect()
+    }
     LaunchedEffect(Unit) { playerVm.errors.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(Unit) { downloads.messages.collect { snackbar.showSnackbar(it) } }
     val message by playerVm.message.collectAsStateWithLifecycle()
@@ -117,13 +139,15 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
         }
     }
 
-    val go = Nav(
-        album = { nav.navigate("album/$it") },
-        artist = { nav.navigate("artist/$it") },
-        playlist = { nav.navigate("playlist/$it") },
-        liked = { nav.navigate("liked") },
-        downloads = { nav.navigate("downloads") },
-    )
+    val go = remember(nav) {
+        Nav(
+            album = { nav.navigate("album/$it") },
+            artist = { nav.navigate("artist/$it") },
+            playlist = { nav.navigate("playlist/$it") },
+            liked = { nav.navigate("liked") },
+            downloads = { nav.navigate("downloads") },
+        )
+    }
     val selectTab = { r: String ->
         nav.navigate(r) {
             popUpTo(nav.graph.findStartDestination().id) { saveState = true }
@@ -145,8 +169,7 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
     )
 
     Scaffold(
-        // Fundo com um brilho roxo no topo, em vez do preto chapado
-        modifier = Modifier.background(Brush.verticalGradient(0f to Color(0xFF1A1233), 0.45f to Kesh.bg)),
+        modifier = Modifier.background(ShellBrush),
         containerColor = Color.Transparent,
         contentColor = Color.White,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -188,15 +211,23 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
                 }
             }
             Column(Modifier.weight(1f)) {
-                NavHost(nav, startDestination = "home", modifier = Modifier.weight(1f)) {
+                // Sem animação entre telas: na central do carro o crossfade padrão custa quadros e não ajuda.
+                // O builder só captura objetos estáveis; playingIdState.value é lido dentro de cada tela.
+                NavHost(
+                    nav, startDestination = "home", modifier = Modifier.weight(1f),
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None },
+                    popEnterTransition = { EnterTransition.None },
+                    popExitTransition = { ExitTransition.None },
+                ) {
                     composable("home") { HomeScreen(go, player) }
-                    composable("search") { SearchScreen(go, player, playingId) }
+                    composable("search") { SearchScreen(go, player, playingIdState.value) }
                     composable("library") { LibraryScreen(go) }
-                    composable("liked") { LikedScreen(player, playingId) }
-                    composable("downloads") { DownloadsScreen(player, playingId) }
-                    composable("album/{id}") { AlbumScreen(go, player, playingId) }
-                    composable("artist/{id}") { ArtistScreen(go, player, playingId) }
-                    composable("playlist/{id}") { PlaylistScreen(player, playingId) }
+                    composable("liked") { LikedScreen(player, playingIdState.value) }
+                    composable("downloads") { DownloadsScreen(player, playingIdState.value) }
+                    composable("album/{id}") { AlbumScreen(go, player, playingIdState.value) }
+                    composable("artist/{id}") { ArtistScreen(go, player, playingIdState.value) }
+                    composable("playlist/{id}") { PlaylistScreen(player, playingIdState.value) }
                     composable("player") { NowPlayingScreen(playerVm) { nav.popBackStack() } }
                 }
                 if (wide) miniPlayer()
@@ -205,14 +236,13 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
     }
 }
 
-/** Marca do app: ondas sonoras num círculo com degradê. */
+/** Marca do app: o mesmo desenho do ícone (K com ondas). As camadas têm 108 de lado e a parte visível 72, daí o zoom. */
 @Composable
 fun Logo(modifier: Modifier = Modifier, size: Dp = 52.dp) {
-    Box(
-        modifier.size(size).shadow(12.dp, CircleShape, spotColor = Kesh.accent).clip(CircleShape)
-            .background(Brush.linearGradient(listOf(Kesh.accentSoft, Kesh.accentDeep))),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(Icons.Default.GraphicEq, "KeshTune", tint = Color.White, modifier = Modifier.size(size * 0.55f))
+    val shape = RoundedCornerShape(size * 0.28f)
+    Box(modifier.size(size).shadow(8.dp, shape, spotColor = Kesh.accent).clip(shape)) {
+        val zoom = Modifier.fillMaxSize().graphicsLayer(scaleX = 1.5f, scaleY = 1.5f)
+        Image(painterResource(R.drawable.ic_launcher_background), null, zoom)
+        Image(painterResource(R.drawable.ic_launcher_foreground), "KeshTune", zoom)
     }
 }

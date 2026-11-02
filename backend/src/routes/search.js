@@ -24,10 +24,11 @@ function normalize(s) {
 async function runSearch(user, raw, types, limit) {
   const nq = normalize(raw);
   const p = [nq, `${esc(nq)}%`, `%${esc(nq)}%`];
-  const out = {};
-  if (types.includes('track')) {
+  // Cada tipo é uma consulta independente: rodam em paralelo (só os pedidos), e a resposta sai
+  // no tempo da mais lenta em vez da soma de todas.
+  const tasks = {
     // Candidatos pelo índice (título ou artista); a nota só é calculada para eles
-    const rows = await q(
+    tracks: () => q(
       `WITH ma AS (SELECT a.id FROM artists a WHERE ${matchSql('a.name')}),
             cand AS (SELECT t.id FROM tracks t WHERE ${matchSql('t.title')}
                      UNION SELECT ta.track_id FROM track_artists ta JOIN ma ON ma.id = ta.artist_id)
@@ -37,38 +38,32 @@ async function runSearch(user, raw, types, limit) {
         WHERE t.status = 'active'
         ORDER BY score DESC, t.popularity DESC LIMIT ${limit}`,
       p
-    );
-    out.tracks = await hydrateTracks(rows.map((r) => r.id), user);
-  }
-  if (types.includes('artist')) {
-    out.artists = await q(
+    ).then((rows) => hydrateTracks(rows.map((r) => r.id), user)),
+    artists: () => q(
       `SELECT a.id, a.name, a.image_url, a.verified FROM artists a WHERE ${matchSql('a.name')}
         ORDER BY ${scoreSql('a.name')} DESC, a.name LIMIT ${limit}`,
       p
-    );
-  }
-  if (types.includes('album')) {
-    out.albums = await q(
+    ),
+    albums: () => q(
       `SELECT al.id, al.title, al.type, al.release_date, al.cover_url, ${ARTIST_JSON} AS artists FROM albums al
         WHERE ${matchSql('al.title')} AND EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = al.id AND t.status = 'active')
         ORDER BY ${scoreSql('al.title')} DESC LIMIT ${limit}`,
       p
-    );
-  }
-  if (types.includes('playlist')) {
-    out.playlists = await playlistCards(
+    ),
+    playlists: () => playlistCards(
       `p.visibility = 'public' AND NOT p.hidden_by_admin AND ${matchSql('p.name')}`, p,
       { limit, order: `${scoreSql('p.name')} DESC` }
-    );
-  }
-  if (types.includes('user')) {
-    out.users = await q(
+    ),
+    users: () => q(
       `SELECT id, display_name, avatar_url FROM users WHERE deleted_at IS NULL AND status = 'active' AND ${matchSql('display_name')}
         ORDER BY ${scoreSql('display_name')} DESC LIMIT ${limit}`,
       p
-    );
-  }
-  return out;
+    ),
+  };
+  // Mesma ordem de chaves de antes (track, artist, album, playlist, user)
+  const keys = TYPES.filter((t) => types.includes(t)).map((t) => `${t}s`);
+  const values = await Promise.all(keys.map((k) => tasks[k]()));
+  return Object.fromEntries(keys.map((k, i) => [k, values[i]]));
 }
 
 searchRouter.get('/search', ah(async (req, res) => {
@@ -80,7 +75,8 @@ searchRouter.get('/search', ah(async (req, res) => {
   const total = Object.values(result).reduce((s, v) => s + v.length, 0);
   // "Você quis dizer...": termo mais parecido do catálogo quando há poucos resultados
   let did_you_mean = null;
-  if (total < 3 && raw.length >= 3) {
+  // O app manda dym=0 (não mostra a sugestão) e economiza essa consulta; o site não manda e continua igual.
+  if (total < 3 && raw.length >= 3 && req.query.dym !== '0') {
     // Só sugere quando o termo não aparece em nada do catálogo (o filtro escolhido pode só não ter resultado).
     // Candidatos pelo operador % (índice de trigramas) em vez de calcular a similaridade com tudo.
     const nq = normalize(raw);

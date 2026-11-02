@@ -50,14 +50,21 @@ interface KeshApi {
     @GET("tracks/{id}")
     suspend fun track(@Path("id") id: String): Track
 
+    /** O app só mostra álbuns e playlists do catálogo (o YouTube é a busca principal); dym=0 dispensa o "você quis dizer". */
     @GET("search")
-    suspend fun search(@Query("q") q: String, @Query("limit") limit: Int = 20): SearchResult
+    suspend fun search(
+        @Query("q") q: String,
+        @Query("type") type: String = "album,playlist",
+        @Query("limit") limit: Int = 12,
+        @Query("dym") dym: Int = 0,
+    ): SearchResult
 
     @GET("youtube/search")
     suspend fun youtubeSearch(@Query("q") q: String): YtSearch
 
+    /** warm=1: o servidor já descobre a URL do áudio (o app toca pelo stream; o site, não). */
     @POST("youtube/tracks")
-    suspend fun youtubeTrack(@Body body: YtTrackBody): Track
+    suspend fun youtubeTrack(@Body body: YtTrackBody, @Query("warm") warm: Int = 1): Track
 
     @POST("youtube/downloads")
     suspend fun youtubeDownloads(@Body body: DownloadsBody): DownloadsResponse

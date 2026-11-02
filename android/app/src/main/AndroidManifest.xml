@@ -41,7 +41,18 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
+
+        <!-- Botão play do volante/central com o app fechado: o Media3 sobe o PlaybackService e
+             retoma a última fila pelo onPlaybackResumption (só quando há fila salva) -->
+        <receiver
+            android:name=".playback.ResumeButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
