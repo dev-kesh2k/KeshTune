@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { BadgeCheck, Play, UserRound } from 'lucide-react';
 import { albumType, artistNames } from '../lib/format';
-import type { AlbumCard, ArtistCard, PlaylistCard } from '../lib/types';
+import type { AlbumCard, ArtistCard, PlaylistCard, Track } from '../lib/types';
 import { Cover } from './ui';
 
 const tile = 'group block w-[clamp(8.5rem,38vw,11rem)] shrink-0 rounded-xl p-2 transition hover:bg-white/[0.06] sm:w-44';
@@ -58,3 +58,33 @@ export function ArtistTile({ a, grid }: { a: ArtistCard; grid?: boolean }) {
 }
 
 export const tileGrid = 'grid grid-cols-2 gap-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6';
+
+/** Card de música (prateleiras da Início, como no app): tocar toca a prateleira inteira a partir dela. */
+export function TrackTile({ t, onPlay }: { t: Track; onPlay: () => void }) {
+  return (
+    <button className={`${tile} text-left`} onClick={onPlay} disabled={!t.playable} aria-label={`Tocar ${t.title}`}>
+      <div className="relative mb-2">
+        <Cover url={t.cover_url} alt={t.title} className="w-full rounded-2xl shadow-lg" />
+        <PlayHint />
+      </div>
+      <p className="truncate text-sm font-semibold">{t.title}</p>
+      <p className="truncate text-xs text-muted">{artistNames(t.artists)}</p>
+    </button>
+  );
+}
+
+export type MixCard = { id: string; title: string; subtitle?: string | null; image_url?: string | null };
+
+/** Mix do YouTube ou playlist do YouTube Music. */
+export function MixTile({ m, grid }: { m: MixCard; grid?: boolean }) {
+  return (
+    <Link to={`/mix/${m.id}`} className={grid ? gridTile : tile}>
+      <div className="relative mb-2">
+        <Cover url={m.image_url} alt={m.title} className="w-full rounded-2xl shadow-lg" />
+        <PlayHint />
+      </div>
+      <p className="truncate text-sm font-semibold">{m.title}</p>
+      {m.subtitle && <p className="truncate text-xs text-muted">{m.subtitle}</p>}
+    </Link>
+  );
+}

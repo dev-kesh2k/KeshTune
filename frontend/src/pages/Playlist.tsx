@@ -235,7 +235,7 @@ export default function Playlist() {
       {data.hidden_by_admin && (
         <p className="mx-4 mb-2 flex items-center gap-2 rounded-lg bg-amber-500/15 px-3 py-2 text-sm text-amber-200 md:mx-6"><EyeOff className="h-4 w-4 shrink-0" /> Oculta da busca pela moderação.</p>
       )}
-      <PlayActions tracks={tracks} ctx={ctx}>
+      <PlayActions tracks={tracks} ctx={ctx} group={{ kind: 'Playlist', image: data.cover_url || data.mosaic?.[0] }}>
         {!data.is_owner && !isCollabMember && (
           <button className={`icon-btn ${data.in_library ? 'text-accent' : ''}`} aria-label={data.in_library ? 'Remover da biblioteca' : 'Salvar na biblioteca'} onClick={toggleFollow}>
             <Heart className={`h-7 w-7 ${data.in_library ? 'fill-accent' : ''}`} />

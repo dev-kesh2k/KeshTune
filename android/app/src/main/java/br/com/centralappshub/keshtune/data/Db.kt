@@ -1,8 +1,10 @@
 package br.com.centralappshub.keshtune.data
 
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -49,6 +51,31 @@ data class LikedEntity(@PrimaryKey val trackId: String, val sortOrder: Long)
 /** Música baixada: o arquivo fica em files/downloads/<trackId>.audio (ver DownloadFiles). */
 @Entity(tableName = "downloads")
 data class DownloadEntity(@PrimaryKey val trackId: String, val bytes: Long, val downloadedAt: Long)
+
+/** Coleção de onde as músicas foram baixadas (mix, playlist, álbum): a tela Baixadas agrupa por ela. */
+@Entity(tableName = "download_groups")
+data class DownloadGroupEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val kind: String,
+    val image: String?,
+    val createdAt: Long,
+)
+
+/** Música de uma coleção baixada, na ordem da coleção. A mesma música pode estar em várias coleções. */
+@Entity(tableName = "download_group_tracks", primaryKeys = ["groupId", "trackId"], indices = [Index("trackId")])
+data class DownloadGroupTrackEntity(val groupId: String, val trackId: String, val position: Int)
+
+/** Coleção com quantas músicas já estão no aparelho (done) de quantas foram pedidas (total). */
+data class DownloadGroupRow(
+    val id: String,
+    val title: String,
+    val kind: String,
+    val image: String?,
+    val createdAt: Long,
+    val done: Int,
+    val total: Int,
+)
 
 fun Track.toEntity() = TrackEntity(id, title, artists, album?.id, album?.title, coverUrl, durationMs, source, playable)
 
@@ -184,7 +211,86 @@ interface LibraryDao {
     suspend fun deleteDownload(id: String)
 
     @Query("DELETE FROM downloads")
-    suspend fun clearDownloads()
+    suspend fun clearDownloadsOnly()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDownloadGroup(g: DownloadGroupEntity)
+
+    @Query("DELETE FROM download_group_tracks WHERE groupId = :id")
+    suspend fun clearDownloadGroupTracks(id: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDownloadGroupTracks(items: List<DownloadGroupTrackEntity>)
+
+    /** Registra (ou atualiza) a coleção e a sua lista; baixar de novo a mesma coleção a sobe para o topo. */
+    @Transaction
+    suspend fun saveDownloadGroup(g: DownloadGroupEntity, tracks: List<Track>) {
+        upsertTracks(tracks.map { it.toEntity() })
+        upsertDownloadGroup(g)
+        clearDownloadGroupTracks(g.id)
+        insertDownloadGroupTracks(tracks.mapIndexed { i, t -> DownloadGroupTrackEntity(g.id, t.id, i) })
+    }
+
+    @Query(
+        """SELECT g.id, g.title, g.kind, g.image, g.createdAt,
+                  (SELECT count(*) FROM download_group_tracks gt JOIN downloads d ON d.trackId = gt.trackId WHERE gt.groupId = g.id) AS done,
+                  (SELECT count(*) FROM download_group_tracks gt WHERE gt.groupId = g.id) AS total
+             FROM download_groups g ORDER BY g.createdAt DESC"""
+    )
+    fun downloadGroups(): Flow<List<DownloadGroupRow>>
+
+    @Query("SELECT * FROM download_groups WHERE id = :id")
+    fun downloadGroup(id: String): Flow<DownloadGroupEntity?>
+
+    /** Músicas já baixadas da coleção, na ordem dela. */
+    @Query(
+        """SELECT t.* FROM download_group_tracks gt JOIN downloads d ON d.trackId = gt.trackId JOIN tracks t ON t.id = gt.trackId
+            WHERE gt.groupId = :id ORDER BY gt.position"""
+    )
+    fun downloadGroupTracks(id: String): Flow<List<TrackEntity>>
+
+    /** Baixadas uma a uma (fora de qualquer coleção). */
+    @Query(
+        """SELECT t.* FROM downloads d JOIN tracks t ON t.id = d.trackId
+            WHERE d.trackId NOT IN (SELECT trackId FROM download_group_tracks) ORDER BY d.downloadedAt DESC"""
+    )
+    fun looseDownloads(): Flow<List<TrackEntity>>
+
+    /** Músicas da coleção que não estão em nenhuma outra: apagar a coleção apaga só estes arquivos. */
+    @Query(
+        """SELECT trackId FROM download_group_tracks WHERE groupId = :id
+              AND trackId NOT IN (SELECT trackId FROM download_group_tracks WHERE groupId <> :id)"""
+    )
+    suspend fun tracksOnlyIn(id: String): List<String>
+
+    @Query("DELETE FROM download_groups WHERE id = :id")
+    suspend fun deleteDownloadGroupOnly(id: String)
+
+    @Transaction
+    suspend fun deleteDownloadGroup(id: String) {
+        clearDownloadGroupTracks(id)
+        deleteDownloadGroupOnly(id)
+    }
+
+    /** Música apagada sai das coleções; coleção que ficou vazia some. */
+    @Query("DELETE FROM download_group_tracks WHERE trackId = :id")
+    suspend fun removeFromDownloadGroups(id: String)
+
+    @Query("DELETE FROM download_groups WHERE id NOT IN (SELECT groupId FROM download_group_tracks)")
+    suspend fun deleteEmptyDownloadGroups()
+
+    @Query("DELETE FROM download_group_tracks")
+    suspend fun clearAllDownloadGroupTracks()
+
+    @Query("DELETE FROM download_groups")
+    suspend fun clearAllDownloadGroups()
+
+    @Transaction
+    suspend fun clearDownloads() {
+        clearDownloadsOnly()
+        clearAllDownloadGroupTracks()
+        clearAllDownloadGroups()
+    }
 
     @Query("DELETE FROM playlist_tracks")
     suspend fun clearAllPlaylistTracks()
@@ -202,9 +308,14 @@ interface LibraryDao {
 }
 
 @Database(
-    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, LikedEntity::class, DownloadEntity::class],
-    version = 2,
+    entities = [
+        TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, LikedEntity::class, DownloadEntity::class,
+        DownloadGroupEntity::class, DownloadGroupTrackEntity::class,
+    ],
+    version = 3,
     exportSchema = true,
+    // 2 -> 3 só cria as tabelas das coleções: os downloads que já estão no aparelho continuam
+    autoMigrations = [AutoMigration(from = 2, to = 3)],
 )
 @TypeConverters(Converters::class)
 abstract class KeshDatabase : RoomDatabase() {

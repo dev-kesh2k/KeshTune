@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { CircleArrowDown, CheckCircle2, Pause, Play, Shuffle } from 'lucide-react';
 import { usePlayer, type PlayContext } from '../lib/player';
 import type { Track } from '../lib/types';
+import { saveGroup } from '../lib/dlgroups';
 import { useUi } from './TrackActions';
 import { Spinner } from './ui';
 
@@ -26,8 +27,13 @@ export function CollectionHeader({
   );
 }
 
-/** Botões tocar/aleatório/baixar de uma coleção (playlist, álbum, artista...). */
-export function PlayActions({ tracks, ctx, children }: { tracks: Track[]; ctx: PlayContext; children?: ReactNode }) {
+/**
+ * Botões tocar/aleatório/baixar de uma coleção (playlist, álbum, artista...). Com group, baixar registra a coleção
+ * para a tela Downloads organizar por ela (como no app).
+ */
+export function PlayActions({
+  tracks, ctx, group, children,
+}: { tracks: Track[]; ctx: PlayContext; group?: { kind: string; image?: string | null }; children?: ReactNode }) {
   const p = usePlayer();
   const ui = useUi();
   const inCtx = p.context?.type === ctx.type && p.context?.id === ctx.id && !!p.current;
@@ -63,7 +69,13 @@ export function PlayActions({ tracks, ctx, children }: { tracks: Track[]; ctx: P
           className={`icon-btn ${allDone ? 'text-accent-soft' : ''}`}
           aria-label={allDone ? 'Baixado' : 'Baixar'}
           title={allDone ? 'Baixado para ouvir offline' : 'Baixar para ouvir offline'}
-          onClick={() => !allDone && !busy && ui.saveTracks(downloadable)}
+          onClick={() => {
+            if (allDone || busy) return;
+            if (group && ctx.id) {
+              saveGroup({ id: `${ctx.type}:${ctx.id}`, title: ctx.name || group.kind, kind: group.kind, image: group.image ?? null, trackIds: downloadable.map((t) => t.id) });
+            }
+            ui.saveTracks(downloadable);
+          }}
         >
           {busy ? <Spinner className="h-6 w-6" /> : allDone ? <CheckCircle2 className="h-7 w-7" /> : <CircleArrowDown className="h-7 w-7" />}
         </button>

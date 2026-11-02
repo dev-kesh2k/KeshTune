@@ -202,6 +202,27 @@ class SearchViewModel @Inject constructor(
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(repo: MusicRepository, private val downloads: DownloadManager) : ViewModel() {
     val tracks = repo.downloadedTracks.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val groups = repo.downloadGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val loose = repo.looseDownloads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun delete(trackId: String) {
+        viewModelScope.launch { downloads.delete(trackId) }
+    }
+
+    fun deleteGroup(groupId: String) {
+        viewModelScope.launch { downloads.deleteGroup(groupId) }
+    }
+}
+
+@HiltViewModel
+class DownloadGroupViewModel @Inject constructor(
+    saved: SavedStateHandle,
+    repo: MusicRepository,
+    private val downloads: DownloadManager,
+) : ViewModel() {
+    private val id: String = checkNotNull(saved["id"])
+    val group = repo.downloadGroup(id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val tracks = repo.downloadGroupTracks(id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun delete(trackId: String) {
         viewModelScope.launch { downloads.delete(trackId) }
