@@ -41,7 +41,7 @@ class BrowseTree(
     private val lastSync = HashMap<String, Long>()
     private val running = HashMap<String, Job>()
 
-    val root: MediaItem = folder(ROOT, "KeshTune")
+    val root: MediaItem = folder(ROOT, "Kesh Tune")
 
     suspend fun children(parentId: String): List<MediaItem> = when (parentId) {
         ROOT -> listOf(

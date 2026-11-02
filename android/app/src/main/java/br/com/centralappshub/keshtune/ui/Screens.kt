@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -106,7 +107,7 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Logo(size = 48.dp)
                 Spacer(Modifier.width(14.dp))
-                Text("KeshTune", style = MaterialTheme.typography.headlineLarge)
+                Text("Kesh Tune", style = MaterialTheme.typography.headlineLarge)
             }
             Text("Entre com a sua conta", color = Kesh.muted)
             OutlinedTextField(
@@ -138,7 +139,10 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
 // ---------------- Início ----------------
 
 @Composable
-fun HomeScreen(nav: Nav, player: PlayerConnection, vm: HomeViewModel = hiltViewModel()) {
+/** homeTaps: muda a cada toque em Início no menu; a lista volta para o topo. */
+fun HomeScreen(nav: Nav, player: PlayerConnection, homeTaps: Int = 0, vm: HomeViewModel = hiltViewModel()) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(homeTaps) { if (homeTaps > 0) listState.scrollToItem(0) }
     // Só atualiza com a Início visível (no Navigation Compose o owner é o NavBackStackEntry): ao voltar
     // para ela, se a lista estiver velha, e quando a internet volta; em outra tela ou em segundo plano, nada
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -153,7 +157,7 @@ fun HomeScreen(nav: Nav, player: PlayerConnection, vm: HomeViewModel = hiltViewM
         is Ui.Error -> ErrorBox(s.message, vm::refresh)
         is Ui.Ok -> {
             val h = s.data
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 item { Greeting() }
                 trackShelf("Tocadas recentemente", h.recent, player)
                 shelf("Artistas em alta no Brasil", h.artists) { ArtistCardView(it) { nav.artist(it.id) } }
