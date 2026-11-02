@@ -35,7 +35,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
           <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className="mb-4 h-16 w-16" />
-          <h1 className="text-[clamp(1.75rem,8vw,2.25rem)] font-black tracking-tight">Spotify X</h1>
+          <h1 className="text-[clamp(1.75rem,8vw,2.25rem)] font-black tracking-tight">KeshTune</h1>
           <p className="mt-1 text-sm text-muted">Milhões de músicas? Começamos pelas suas.</p>
         </div>
         <form onSubmit={submit} className="card space-y-4 p-5 sm:p-6">

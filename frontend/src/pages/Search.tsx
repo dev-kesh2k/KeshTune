@@ -1,8 +1,8 @@
-import { mediaUrl } from '../lib/format';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Clock, Search as SearchIcon, UserRound, X } from 'lucide-react';
 import { api, errText } from '../lib/api';
+import { mediaUrl } from '../lib/format';
 
 import { usePlayer } from '../lib/player';
 import { useFetch } from '../lib/useFetch';
@@ -10,6 +10,8 @@ import type { AlbumCard, ArtistCard, Genre, PlaylistCard, Track } from '../lib/t
 import { Cover, Empty, ErrorBox, PageLoading, Section, Spinner } from '../components/ui';
 import { AlbumTile, ArtistTile, PlaylistTile, tileGrid } from '../components/Tiles';
 import { TrackList } from '../components/TrackList';
+import { YoutubeResults } from '../components/YoutubeResults';
+import { YoutubePlaylists } from '../components/YoutubePlaylists';
 import { pagePad } from '../components/Layout';
 
 type Result = { tracks?: Track[]; artists?: ArtistCard[]; albums?: AlbumCard[]; playlists?: PlaylistCard[]; users?: { id: string; display_name: string; avatar_url: string | null }[]; did_you_mean: string | null };
@@ -169,14 +171,13 @@ export default function Search() {
           ) : err ? (
             <ErrorBox text={err} />
           ) : result && total === 0 ? (
-            <Empty icon={<SearchIcon className="h-10 w-10" />} title={`Nada encontrado para "${q}"`} text="Confira a ortografia ou tente outras palavras." />
+            filter === 'all' || filter === 'track' || filter === 'playlist' ? (
+              <p className="mb-4 text-sm text-muted">Nada no catálogo para "{q}".</p>
+            ) : (
+              <Empty icon={<SearchIcon className="h-10 w-10" />} title={`Nada encontrado para "${q}"`} text="Confira a ortografia ou tente outras palavras." />
+            )
           ) : result ? (
             <div className={busy ? 'opacity-60' : ''}>
-              {!!result.playlists?.length && (
-                <Section title="Playlists">
-                  <div className={tileGrid}>{result.playlists.map((p) => <PlaylistTile key={p.id} p={p} grid />)}</div>
-                </Section>
-              )}
               {!!result.tracks?.length && (
                 <Section title="Músicas">
                   <TrackList
@@ -199,6 +200,11 @@ export default function Search() {
                   <div className={tileGrid}>{result.albums.map((a) => <AlbumTile key={a.id} a={a} grid />)}</div>
                 </Section>
               )}
+              {!!result.playlists?.length && (
+                <Section title="Playlists">
+                  <div className={tileGrid}>{result.playlists.map((p) => <PlaylistTile key={p.id} p={p} grid />)}</div>
+                </Section>
+              )}
               {!!result.users?.length && (
                 <Section title="Perfis">
                   <div className={tileGrid}>
@@ -214,6 +220,8 @@ export default function Search() {
               )}
             </div>
           ) : null}
+          {(filter === 'all' || filter === 'track') && <YoutubeResults q={q} />}
+          {(filter === 'all' || filter === 'playlist') && <YoutubePlaylists q={q} />}
         </>
       ) : (
         <>
@@ -257,9 +265,14 @@ export default function Search() {
                       .filter((g) => g.kind === kind)
                       .map((g) => (
                         <Link key={g.id} to={`/genre/${g.id}`} className="relative flex aspect-[16/10] min-w-0 overflow-hidden rounded-xl p-3 transition active:scale-95" style={{ background: g.color }}>
-                          <span className="relative z-10 break-words text-[clamp(0.95rem,4vw,1.2rem)] font-bold leading-tight">{g.name}</span>
-                          {g.cover_url && <img src={mediaUrl(g.cover_url)!} alt="" loading="lazy" className="absolute -bottom-2 -right-3 h-[4.5rem] w-[4.5rem] rotate-[25deg] rounded-md object-cover shadow-lg" />}
-                          <span className="absolute bottom-2 left-3 z-10 text-xs font-semibold text-white/80">{g.track_count ? `${g.track_count} ${g.track_count === 1 ? 'faixa' : 'faixas'}` : ''}</span>
+                          {g.cover_url && (
+                            // Miniatura inclinada no canto, com a capa da música mais popular do gênero
+                            <span className="absolute -bottom-2 -right-4 aspect-square w-[42%] rotate-[25deg] overflow-hidden rounded-md shadow-xl">
+                              <img src={mediaUrl(g.cover_url)!} alt="" loading="lazy" className={`h-full w-full object-cover ${g.cover_url.startsWith('https://i.ytimg.com/') ? 'scale-[1.34]' : ''}`} />
+                            </span>
+                          )}
+                          <span className="relative max-w-[62%] break-words text-[clamp(0.95rem,4vw,1.2rem)] font-bold leading-tight">{g.name}</span>
+                          <span className="absolute bottom-2 left-3 text-xs font-semibold text-white/80">{g.track_count ? `${g.track_count} ${g.track_count === 1 ? 'faixa' : 'faixas'}` : ''}</span>
                         </Link>
                       ))}
                   </div>
