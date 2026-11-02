@@ -37,3 +37,11 @@ A busca do app mostra também a seção **Do YouTube**. Tocar um resultado, ou a
 - **Minhas músicas**: playlist do sistema (`playlists.system_key = 'my_music'`), criada no primeiro download. Recebe cada faixa baixada, com as mais recentes no topo.
 - **Baixar playlist/álbum inteiro**: o botão de download da coleção também baixa as faixas do YouTube (`POST /youtube/downloads` em lote; o servidor baixa uma por vez e o app leva cada uma para Downloads assim que fica pronta).
 - O yt-dlp usa o Node do backend como runtime de JavaScript (`--js-runtimes`); sem isso o YouTube recusa vários vídeos.
+
+## App Android (central multimídia do carro)
+
+**android/**: app nativo em Kotlin + Jetpack Compose. Usa Media3 (ExoPlayer + MediaLibraryService) para tocar, com áudio em segundo plano, notificação, foco de áudio, botões do volante e Android Auto. Também usa Room (cópia local de playlists e curtidas), Coroutines/Flow, Hilt e Retrofit. Ele conversa com a mesma API do web (`APP_URL` em `android/app/build.gradle`).
+
+- Faixas do YouTube não tocam direto: na hora de tocar, o app pede a conversão urgente (`POST /youtube/downloads`) e espera ficar pronta.
+- Gerar o APK: `cd android && ./gradlew assembleRelease` (JDK 17 a 21). O APK sai em `android/app/build/outputs/apk/prod/release/`. `assembleDevRelease` gera o "KeshTune Dev", que usa o ambiente de testes (`/keshtune-dev/`) e instala lado a lado.
+- Assinatura: `android/keystore.properties` + `android/keshtune-release.jks`, ambos fora do git. Guarde uma cópia: sem essa chave, as próximas versões não instalam por cima da atual.
