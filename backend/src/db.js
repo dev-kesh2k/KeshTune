@@ -13,6 +13,8 @@ export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   max: Number(process.env.DB_POOL_MAX) || 4,
   idleTimeoutMillis: 30000,
+  // Limites da busca com tolerância a erros (operadores <% e % do pg_trgm, que usam o índice; ver routes/search.js)
+  options: '-c pg_trgm.word_similarity_threshold=0.45 -c pg_trgm.similarity_threshold=0.3',
 });
 pool.on('error', (err) => console.error('[pg] erro no pool:', err.message));
 

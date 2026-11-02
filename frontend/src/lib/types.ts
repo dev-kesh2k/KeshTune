@@ -61,4 +61,4 @@ export type PlaylistDetail = PlaylistCard & {
   created_at: string;
   updated_at: string;
 };
-export type Genre = { id: number; name: string; kind: 'genre' | 'mood'; color: string; track_count?: number };
+export type Genre = { id: number; name: string; kind: 'genre' | 'mood'; color: string; track_count?: number; cover_url?: string | null };

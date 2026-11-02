@@ -215,7 +215,7 @@ const audioUpload = multer({
   limits: { fileSize: 80 * 1024 * 1024, files: 1 },
 });
 const CONTAINER_MIME = { MPEG: 'audio/mpeg', 'MPEG-4': 'audio/mp4', Ogg: 'audio/ogg', WAVE: 'audio/wav', FLAC: 'audio/flac', 'EBML/webm': 'audio/webm', 'EBML/matroska': 'audio/webm' };
-const MIME_EXT = { 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/flac': 'flac', 'audio/webm': 'webm' };
+export const MIME_EXT = { 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/wav': 'wav', 'audio/flac': 'flac', 'audio/webm': 'webm' };
 
 setInterval(() => {
   try {

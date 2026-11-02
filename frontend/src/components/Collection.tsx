@@ -31,10 +31,11 @@ export function PlayActions({ tracks, ctx, children }: { tracks: Track[]; ctx: P
   const p = usePlayer();
   const ui = useUi();
   const inCtx = p.context?.type === ctx.type && p.context?.id === ctx.id && !!p.current;
-  const downloadable = tracks.filter((t) => t.downloadable);
+  // Arquivos baixam direto; faixas do YouTube o servidor baixa antes (ver saveTracks)
+  const downloadable = tracks.filter((t) => t.downloadable || (t.source === 'youtube' && t.playable));
   const states = downloadable.map((t) => ui.dlState(t.id));
   const allDone = downloadable.length > 0 && states.every((s) => s === 'READY' || s === 'EXPIRING');
-  const busy = states.some((s) => s === 'QUEUED' || s === 'DOWNLOADING');
+  const busy = states.some((s) => s === 'QUEUED' || s === 'DOWNLOADING') || downloadable.some((t) => ui.isSaving(t.id));
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 py-4 md:px-6">
       <button
@@ -62,7 +63,7 @@ export function PlayActions({ tracks, ctx, children }: { tracks: Track[]; ctx: P
           className={`icon-btn ${allDone ? 'text-accent-soft' : ''}`}
           aria-label={allDone ? 'Baixado' : 'Baixar'}
           title={allDone ? 'Baixado para ouvir offline' : 'Baixar para ouvir offline'}
-          onClick={() => !allDone && ui.download(downloadable)}
+          onClick={() => !allDone && !busy && ui.saveTracks(downloadable)}
         >
           {busy ? <Spinner className="h-6 w-6" /> : allDone ? <CheckCircle2 className="h-7 w-7" /> : <CircleArrowDown className="h-7 w-7" />}
         </button>
