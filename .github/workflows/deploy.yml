@@ -1,23 +1,23 @@
 name: Deploy
 
-# main -> produção (/keshtune/) · dev -> ambiente de testes (/keshtune-dev/)
+# main -> produção (/keshtune/). Não há ambiente de testes: todo push na main vai para o ar.
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   workflow_dispatch:
 
 env:
-  SLUG: ${{ github.ref_name == 'main' && 'keshtune' || 'keshtune-dev' }}
-  APP_NAME: ${{ github.ref_name == 'main' && 'KeshTune' || 'KeshTune Dev' }}
+  SLUG: keshtune
+  APP_NAME: KeshTune
 
 concurrency:
-  group: deploy-${{ github.ref_name }}
+  group: deploy-main
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: [self-hosted, hub]
-    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
