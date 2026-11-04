@@ -81,9 +81,12 @@ fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     ) {
         Column {
             Row(Modifier.padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Cover(meta.artworkUri?.toString(), 56.dp, shape = RoundedCornerShape(14.dp))
+                // Botões à esquerda, perto do motorista; música e capa à direita
+                IconButton(vm.player::previous, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, "Anterior", Modifier.size(32.dp)) }
+                PlayPause(s.isPlaying, s.buffering, 54.dp) { vm.player.toggle() }
+                IconButton(vm.player::next, Modifier.size(56.dp)) { Icon(Icons.Default.SkipNext, "Próxima", Modifier.size(32.dp)) }
                 Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Text(
                         meta.title?.toString().orEmpty(), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -95,9 +98,8 @@ fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(vm.player::previous, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, "Anterior", Modifier.size(32.dp)) }
-                PlayPause(s.isPlaying, s.buffering, 54.dp) { vm.player.toggle() }
-                IconButton(vm.player::next, Modifier.size(56.dp)) { Icon(Icons.Default.SkipNext, "Próxima", Modifier.size(32.dp)) }
+                Spacer(Modifier.width(14.dp))
+                Cover(meta.artworkUri?.toString(), 56.dp, shape = RoundedCornerShape(14.dp))
             }
             MiniProgress(vm, Modifier.padding(horizontal = 18.dp).padding(bottom = 8.dp))
         }
