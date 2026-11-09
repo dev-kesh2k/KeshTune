@@ -1,5 +1,7 @@
 import { execFile } from 'child_process';
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import { Readable } from 'stream';
 import { one, q, tx } from '../db.js';
 import { adminOnly, audit, auth, verifyStream } from '../security.js';
@@ -7,7 +9,7 @@ import { getSettings } from '../seed.js';
 import { ah, bad, forbidden, int, notFound, str, uuidList, uuidParam } from '../util.js';
 import { hydrateTracks } from '../views.js';
 import { createTrack, findOrCreateArtist } from './admin.js';
-import { saveImage } from './media.js';
+import { AUDIO_DIR, saveImage } from './media.js';
 import { detect, enqueueJob, YTDLP_JS } from './imports.js';
 import { addToMyMusic, createPlaylistWithTracks } from './playlists.js';
 
@@ -725,6 +727,25 @@ youtubeRouter.get('/youtube/jobs', ah(async (req, res) => {
   const rows = await q(`SELECT id, status, error, track_id FROM import_jobs WHERE id = ANY($1::uuid[]) AND kind = 'youtube'`, [ids]);
   const done = new Map((await hydrateTracks(rows.filter((r) => r.status === 'done').map((r) => r.track_id), req.user)).map((t) => [t.id, t]));
   res.json({ items: rows.map((r) => ({ ...r, track: done.get(r.track_id) || null })) });
+}));
+
+/**
+ * O app Android avisa que já guardou as faixas no aparelho: o servidor apaga o áudio delas para não ocupar disco.
+ * Só faixas que vieram do YouTube (têm youtube_id): voltam a ser 'youtube' com o mesmo id (curtidas e playlists
+ * continuam valendo) e, se alguém precisar do arquivo de novo, o servidor reconverte. Envio manual do admin fica.
+ */
+youtubeRouter.post('/youtube/offload', ah(async (req, res) => {
+  const ids = uuidList(req.body?.track_ids, 'track_ids', 500);
+  const rows = await q(
+    `UPDATE tracks t SET source = 'youtube', audio_path = NULL, audio_mime = NULL, audio_size = NULL, checksum = NULL, bitrate_kbps = NULL
+       FROM (SELECT id, audio_path FROM tracks WHERE id = ANY($1::uuid[]) AND source = 'file' AND youtube_id IS NOT NULL FOR UPDATE) old
+      WHERE t.id = old.id
+      RETURNING t.id, old.audio_path`,
+    [ids]
+  );
+  for (const r of rows) if (r.audio_path) fs.rmSync(path.join(AUDIO_DIR, path.basename(r.audio_path)), { force: true });
+  if (rows.length) await audit(req, 'track.offload', 'track', rows.length === 1 ? rows[0].id : null, { count: rows.length });
+  res.json({ removed: rows.map((r) => r.id) });
 }));
 
 // ---------------- Mixes: playlists do YouTube Music e mixes automáticos ----------------

@@ -239,6 +239,9 @@ class DownloadManager @Inject constructor(
         lenFile(t.id).delete()
         // Depois da conversão a faixa do YouTube passa a ser arquivo próprio
         repo.saveDownload(t.copy(source = "file"), dest.length())
+        // Já está no aparelho: o servidor apaga o áudio dele (só das faixas do YouTube; reconverte se precisar de novo).
+        // Falhar aqui não desfaz o download: no pior caso o arquivo fica no servidor
+        runCatching { repo.offload(t.id) }
         // Aquece o disco com a capa (a grande e, do YouTube, a pequena das listas) para ela aparecer sem internet
         coverUrlsToWarm(mediaUrl(t.coverUrl)).forEach { cover ->
             SingletonImageLoader.get(context).enqueue(
