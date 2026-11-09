@@ -18,7 +18,7 @@ import { playbackRouter } from './routes/playback.js';
 import { offlineRouter } from './routes/offline.js';
 import { adminRouter } from './routes/admin.js';
 import { importsRouter, startImportWorker } from './routes/imports.js';
-import { startArtistImageWorker, startMixesWarmup, youtubeRouter } from './routes/youtube.js';
+import { startArtistImageWorker, startMixesWarmup, startOffloadSweeper, youtubeRouter } from './routes/youtube.js';
 
 const app = express();
 app.set('trust proxy', process.env.TRUST_PROXY ? process.env.TRUST_PROXY.split(',') : 'loopback');
@@ -129,6 +129,7 @@ const port = Number(process.env.PORT) || 3000;
   await startRealtime();
   startImportWorker();
   startArtistImageWorker();
+  startOffloadSweeper();
   startMixesWarmup();
   app.listen(port, '0.0.0.0', () => console.log(`KeshTune API em 0.0.0.0:${port} (prefixo ${publicPath || '/'})`));
 })().catch((e) => {

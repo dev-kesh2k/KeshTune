@@ -730,23 +730,50 @@ youtubeRouter.get('/youtube/jobs', ah(async (req, res) => {
 }));
 
 /**
- * O app Android avisa que já guardou as faixas no aparelho: o servidor apaga o áudio delas para não ocupar disco.
- * Só faixas que vieram do YouTube (têm youtube_id): voltam a ser 'youtube' com o mesmo id (curtidas e playlists
- * continuam valendo) e, se alguém precisar do arquivo de novo, o servidor reconverte. Envio manual do admin fica.
+ * Tira o áudio do servidor das faixas que vieram do YouTube (têm youtube_id): voltam a ser 'youtube' com o mesmo id
+ * (curtidas e playlists continuam valendo) e, se alguém precisar do arquivo de novo, o servidor reconverte.
+ * Envio manual do admin (sem youtube_id) nunca sai. `filter` é SQL extra sobre a tabela tracks (alias tr).
  */
-youtubeRouter.post('/youtube/offload', ah(async (req, res) => {
-  const ids = uuidList(req.body?.track_ids, 'track_ids', 500);
+async function offloadTracks(filter, params) {
   const rows = await q(
     `UPDATE tracks t SET source = 'youtube', audio_path = NULL, audio_mime = NULL, audio_size = NULL, checksum = NULL, bitrate_kbps = NULL
-       FROM (SELECT id, audio_path FROM tracks WHERE id = ANY($1::uuid[]) AND source = 'file' AND youtube_id IS NOT NULL FOR UPDATE) old
+       FROM (SELECT tr.id, tr.audio_path FROM tracks tr
+              WHERE tr.source = 'file' AND tr.youtube_id IS NOT NULL AND (${filter})
+                AND NOT EXISTS (SELECT 1 FROM import_jobs j WHERE j.track_id = tr.id AND j.status IN ('queued','running'))
+              FOR UPDATE SKIP LOCKED) old
       WHERE t.id = old.id
       RETURNING t.id, old.audio_path`,
-    [ids]
+    params
   );
   for (const r of rows) if (r.audio_path) fs.rmSync(path.join(AUDIO_DIR, path.basename(r.audio_path)), { force: true });
-  if (rows.length) await audit(req, 'track.offload', 'track', rows.length === 1 ? rows[0].id : null, { count: rows.length });
-  res.json({ removed: rows.map((r) => r.id) });
+  return rows.map((r) => r.id);
+}
+
+/** O app Android avisa que já guardou as faixas no aparelho: o servidor apaga o áudio delas na hora. */
+youtubeRouter.post('/youtube/offload', ah(async (req, res) => {
+  const ids = uuidList(req.body?.track_ids, 'track_ids', 500);
+  const removed = await offloadTracks('tr.id = ANY($1::uuid[])', [ids]);
+  if (removed.length) await audit(req, 'track.offload', 'track', removed.length === 1 ? removed[0] : null, { count: removed.length });
+  res.json({ removed });
 }));
+
+/**
+ * Rede de segurança: o que sobrou no servidor (ouvida sem baixar, baixada pelo site, aviso do app que não chegou)
+ * sai 48 h depois da última conversão. Quem precisar de novo faz o servidor reconverter, e o prazo recomeça.
+ */
+export const OFFLOAD_AFTER_H = Number(process.env.OFFLOAD_AFTER_H || 48);
+export async function sweepOffload() {
+  const removed = await offloadTracks(
+    `COALESCE((SELECT max(j.finished_at) FROM import_jobs j WHERE j.track_id = tr.id AND j.status = 'done'), tr.created_at)
+       < now() - make_interval(hours => $1)`,
+    [OFFLOAD_AFTER_H]
+  );
+  if (removed.length) console.log(`[offload] ${removed.length} faixa(s) com mais de ${OFFLOAD_AFTER_H} h saíram do servidor`);
+}
+export function startOffloadSweeper() {
+  setInterval(() => sweepOffload().catch((e) => console.error('[offload]', e.message)), 60 * 60 * 1000).unref();
+  setTimeout(() => sweepOffload().catch((e) => console.error('[offload]', e.message)), 60000).unref();
+}
 
 // ---------------- Mixes: playlists do YouTube Music e mixes automáticos ----------------
 // Playlists oficiais do YouTube Music (canal "YouTube Music", id RDCLAK5uy_…) achadas pela busca do music.youtube.com
