@@ -205,6 +205,9 @@ data class PlaybackSession(val source: String, val url: String? = null, val vide
 data class DownloadsBody(val trackIds: List<String>, val urgent: Boolean = false)
 
 @Serializable
+data class OffloadBody(val trackIds: List<String>)
+
+@Serializable
 data class DownloadItem(val trackId: String, val status: String, val jobId: String? = null, val error: String? = null)
 
 @Serializable

@@ -75,6 +75,10 @@ interface KeshApi {
     @POST("youtube/downloads")
     suspend fun youtubeDownloads(@Body body: DownloadsBody): DownloadsResponse
 
+    /** A faixa já está guardada no aparelho: o servidor apaga o áudio dela (reconverte se alguém precisar). */
+    @POST("youtube/offload")
+    suspend fun youtubeOffload(@Body body: OffloadBody)
+
     @GET("youtube/jobs")
     suspend fun youtubeJobs(@Query("ids") ids: String): JobsResponse
 
