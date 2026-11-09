@@ -264,6 +264,9 @@ class MusicRepository @Inject constructor(
         trackIds.chunked(500).forEach { ids -> call { youtubeDownloads(DownloadsBody(ids, urgent = urgent)) } }
     }
 
+    /** Avisa que a faixa foi salva no aparelho, para o servidor liberar o espaço dela. */
+    suspend fun offload(trackId: String) = call { youtubeOffload(OffloadBody(listOf(trackId))) }
+
     suspend fun job(jobId: String): Job? = call { youtubeJobs(jobId) }.items.firstOrNull()
     suspend fun sendEvents(events: List<PlayEvent>) = call { playbackEvents(EventsBody(events)) }
 
