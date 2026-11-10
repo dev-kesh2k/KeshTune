@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import br.com.centralappshub.keshtune.data.DownloadGroup
 import br.com.centralappshub.keshtune.data.Track
+import br.com.centralappshub.keshtune.data.deviceLogin
 import br.com.centralappshub.keshtune.data.YtResult
 import br.com.centralappshub.keshtune.playback.PlayerConnection
 
@@ -271,7 +272,8 @@ fun LibraryScreen(nav: Nav, vm: LibraryViewModel = hiltViewModel()) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Sua biblioteca", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f))
-                RoundIconButton(Icons.AutoMirrored.Filled.Logout, "Sair", size = 48.dp, onClick = vm::logout)
+                // Na multimídia (chave de aparelho) não há "Sair": o app entra sozinho na conta do dono
+                if (!deviceLogin) RoundIconButton(Icons.AutoMirrored.Filled.Logout, "Sair", size = 48.dp, onClick = vm::logout)
             }
         }
         item {

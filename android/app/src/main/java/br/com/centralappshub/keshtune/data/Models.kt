@@ -185,6 +185,9 @@ data class LoginRequest(val email: String, val password: String, val otp: String
 data class RefreshRequest(val refreshToken: String)
 
 @Serializable
+data class DeviceLoginRequest(val deviceKey: String)
+
+@Serializable
 data class Tokens(
     val accessToken: String,
     val refreshToken: String,

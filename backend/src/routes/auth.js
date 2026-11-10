@@ -4,7 +4,7 @@ import {
   auth, audit, createSession, forgetUser, hashPassword, newTotpSecret, openTotp, passwordProblem,
   rotateSession, sealTotp, verifyPassword, verifyTotp,
 } from '../security.js';
-import { ah, bad, HttpError, rateLimiter, str } from '../util.js';
+import { ah, bad, HttpError, rateLimiter, sha256, str } from '../util.js';
 import { emit } from '../realtime.js';
 
 export const authRouter = express.Router();
@@ -53,6 +53,21 @@ authRouter.post('/auth/login', loginLimiter, ah(async (req, res) => {
   await q(`UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = $1`, [u.id]);
   const tokens = await createSession(u, req);
   res.json({ ...tokens, must_change_password: u.must_change_password });
+}));
+
+/** Aparelho com chave própria (multimídia do carro): abre uma sessão normal na conta dona da chave, sem senha. */
+authRouter.post('/auth/device', loginLimiter, ah(async (req, res) => {
+  const key = String(req.body?.device_key || '');
+  if (key.length < 32 || key.length > 200) throw new HttpError(401, 'INVALID_CREDENTIALS', 'Chave do aparelho inválida');
+  const d = await one(
+    `SELECT u.*, d.id AS device_id FROM device_keys d JOIN users u ON u.id = d.user_id
+      WHERE d.key_hash = $1 AND d.revoked_at IS NULL AND u.deleted_at IS NULL`,
+    [sha256(key)]
+  );
+  if (!d) throw new HttpError(401, 'INVALID_CREDENTIALS', 'Chave do aparelho inválida');
+  if (d.status !== 'active') throw new HttpError(403, 'ACCOUNT_RESTRICTED', 'Conta bloqueada. Fale com o administrador.');
+  await q(`UPDATE device_keys SET last_used_at = now() WHERE id = $1`, [d.device_id]);
+  res.json({ ...(await createSession(d, req)), must_change_password: false });
 }));
 
 authRouter.post('/auth/refresh', ah(async (req, res) => {

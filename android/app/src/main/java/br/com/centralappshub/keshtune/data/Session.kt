@@ -18,11 +18,14 @@ import okhttp3.Route
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** APK de um aparelho fixo (multimídia do carro) com chave própria: entra sozinho, sem tela de login. */
+val deviceLogin: Boolean get() = BuildConfig.DEVICE_KEY.isNotEmpty()
+
 /** Tokens de acesso guardados no aparelho; o refresh token gira a cada renovação. */
 @Singleton
 class TokenStore @Inject constructor(@ApplicationContext context: Context) {
     private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
-    private val _loggedIn = MutableStateFlow(prefs.getString(REFRESH, null) != null)
+    private val _loggedIn = MutableStateFlow(deviceLogin || prefs.getString(REFRESH, null) != null)
     val loggedIn: StateFlow<Boolean> = _loggedIn
 
     val access: String? get() = prefs.getString(ACCESS, null)
@@ -35,7 +38,8 @@ class TokenStore @Inject constructor(@ApplicationContext context: Context) {
 
     fun clear() {
         prefs.edit().clear().apply()
-        _loggedIn.value = false
+        // Com chave de aparelho continua "logado": a próxima requisição abre uma sessão nova sozinha
+        _loggedIn.value = deviceLogin
     }
 
     private companion object {
@@ -64,7 +68,7 @@ class TokenRefresher(
             // Outra requisição já renovou enquanto esta esperava
             val current = tokens.access
             if (current != null && current != sent) return withToken(response.request, current)
-            val refresh = tokens.refresh ?: return null
+            val refresh = tokens.refresh ?: return deviceSession()?.let { withToken(response.request, it.accessToken) }
             val req = Request.Builder()
                 .url("${BuildConfig.APP_URL}api/auth/refresh")
                 .post(json.encodeToString(RefreshRequest(refresh)).toRequestBody("application/json".toMediaType()))
@@ -77,10 +81,24 @@ class TokenRefresher(
                         else -> null
                     }
                 }
-            }.getOrNull() ?: return null
+            }.getOrNull() ?: if (tokens.refresh == null) deviceSession() ?: return null else return null
             tokens.save(fresh)
             return withToken(response.request, fresh.accessToken)
         }
+    }
+
+    /** Abre uma sessão nova com a chave do aparelho (só no APK da multimídia). */
+    private fun deviceSession(): Tokens? {
+        if (!deviceLogin) return null
+        val req = Request.Builder()
+            .url("${BuildConfig.APP_URL}api/auth/device")
+            .post(json.encodeToString(DeviceLoginRequest(BuildConfig.DEVICE_KEY)).toRequestBody("application/json".toMediaType()))
+            .build()
+        val t = runCatching {
+            bare.newCall(req).execute().use { r -> if (r.isSuccessful) json.decodeFromString<Tokens>(r.body!!.string()) else null }
+        }.getOrNull() ?: return null
+        tokens.save(t)
+        return t
     }
 
     private fun withToken(r: Request, token: String) = r.newBuilder().header("Authorization", "Bearer $token").build()
