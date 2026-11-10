@@ -108,6 +108,7 @@ function lane() {
 // Buscas numa fila e abertura de vídeo noutra (quem aperta tocar não espera o aquecimento das abas)
 const oneAtATime = lane();
 const playLane = lane();
+const warmLane = lane(); // pré-carga dos links (próximo vídeo, primeiros da lista)
 
 /** yt-dlp em modo lista (sem baixar nada): reserva quando a API não responde ou a cota acabou. */
 function ytdlpList(target) {
@@ -202,7 +203,8 @@ export function startVideoWarmup() {
       // Outra réplica já renovou há pouco: não repete
       let fresh = false;
       try { fresh = Date.now() - JSON.parse(fs.readFileSync(cacheFile(`feed:pv:${o.user_id}`), 'utf8')).at < 40 * 60 * 1000; } catch { /* sem arquivo */ }
-      if (!fresh) await feed('para-voce', o.user_id, true).catch(() => {});
+      const items = fresh ? [] : await feed('para-voce', o.user_id, true).catch(() => []);
+      prefetch(items.map((v) => v.youtube_id), 720);
     }
     for (const cat of Object.keys(CATEGORIES)) if (CATEGORIES[cat]) await feed(cat).catch(() => {});
   };
@@ -231,11 +233,23 @@ videoRouter.get('/video/related/:id', ah(async (req, res) => {
 const direct = new Map(); // `${id}:${q}` -> { until, promise: { video, audio } }
 
 /** URLs do googlevideo pelo yt-dlp: vídeo H.264 até a qualidade pedida + áudio AAC; sem isso, o MP4 360p junto. */
-function resolveStreams(id, q, force = false) {
+function resolveStreams(id, q, force = false, laneFn = playLane) {
   const key = `${id}:${q}`;
   const hit = direct.get(key);
   if (!force && hit && hit.until > Date.now()) return hit.promise;
-  const run = (fmt) => playLane(() => new Promise((resolve, reject) => {
+  // Outra réplica já descobriu (arquivo dividido entre elas)
+  const shared = path.join(CACHE_DIR, `play-${id}-${q}.json`);
+  if (!force) {
+    try {
+      const f = JSON.parse(fs.readFileSync(shared, 'utf8'));
+      if (f.until > Date.now()) {
+        const e = { until: f.until, promise: Promise.resolve(f.streams) };
+        direct.set(key, e);
+        return e.promise;
+      }
+    } catch { /* sem arquivo */ }
+  }
+  const run = (fmt) => laneFn(() => new Promise((resolve, reject) => {
     execFile(YTDLP, ['-f', fmt, '-g', '--no-playlist', '--no-warnings', ...YTDLP_JS, `https://www.youtube.com/watch?v=${id}`], { timeout: 60000 }, (err, out) => {
       const urls = String(out || '').trim().split('\n').filter((l) => l.startsWith('http'));
       if (err || !urls.length) return reject(err || new Error('sem URL'));
@@ -252,6 +266,7 @@ function resolveStreams(id, q, force = false) {
     let exp = 0;
     try { exp = Number(new URL(s.video).searchParams.get('expire')) * 1000; } catch { /* sem expire */ }
     entry.until = exp > Date.now() ? exp - 10 * 60 * 1000 : Date.now() + 3600 * 1000;
+    try { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(shared, JSON.stringify({ until: entry.until, streams: s })); } catch { /* sem disco */ }
   }, () => { if (direct.get(key) === entry) direct.delete(key); });
   while (direct.size > 200) direct.delete(direct.keys().next().value);
   return promise;
@@ -261,6 +276,15 @@ const signed = (kind, id, q, userId, ttlS) => {
   const { exp, sig, u } = signStream(`${kind}:${id}:${q}`, userId, ttlS);
   return `?q=${q}&u=${u}&exp=${exp}&sig=${sig}`;
 };
+
+/** Já descobre os links destes vídeos (o yt-dlp leva uns 10 s): o app pede para o próximo da fila. */
+function prefetch(ids, q) {
+  for (const id of ids.slice(0, 6)) if (/^[\w-]{11}$/.test(id)) resolveStreams(id, q, false, warmLane).catch(() => {});
+}
+videoRouter.post('/video/prefetch', ah(async (req, res) => {
+  prefetch(Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [], quality(req.body?.q));
+  res.json({ ok: true });
+}));
 
 /** Links (assinados, o player não manda o login) do vídeo e do áudio para tocar. */
 videoRouter.get('/video/play/:id', ah(async (req, res) => {
@@ -441,13 +465,20 @@ videoRouter.get('/vfile/:id', ah(async (req, res) => {
 
 /** MP4 que o app não buscou sai depois de KEEP_H horas. */
 export function startVideoSweeper() {
+  const sweepDir = (dir, maxAgeMs) => {
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch { return; }
+    for (const f of names) {
+      const full = path.join(dir, f);
+      try {
+        const st = fs.statSync(full);
+        if (st.isFile() && Date.now() - st.mtimeMs > maxAgeMs) fs.rmSync(full, { force: true });
+      } catch { /* sumiu no meio */ }
+    }
+  };
   const sweep = () => {
-    try {
-      for (const f of fs.readdirSync(VIDEO_DIR)) {
-        const full = path.join(VIDEO_DIR, f);
-        if (Date.now() - fs.statSync(full).mtimeMs > KEEP_H * 3600 * 1000) fs.rmSync(full, { force: true });
-      }
-    } catch { /* pasta ainda não existe */ }
+    sweepDir(VIDEO_DIR, KEEP_H * 3600 * 1000);
+    sweepDir(CACHE_DIR, 24 * 3600 * 1000);
   };
   sweep();
   setInterval(sweep, 3600 * 1000).unref();
