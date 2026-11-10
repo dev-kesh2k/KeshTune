@@ -93,9 +93,25 @@ async function details(ids) {
   return ids.map((id) => byId.get(id)).filter(Boolean);
 }
 
+/**
+ * Um yt-dlp por vez neste módulo: cada um abre um Node próprio (runtime de JS) e o container tem pouca memória
+ * (170 MB); vários juntos estouravam o limite e derrubavam a API inteira.
+ */
+function lane() {
+  let busy = Promise.resolve();
+  return (fn) => {
+    const run = busy.then(fn, fn);
+    busy = run.catch(() => {});
+    return run;
+  };
+}
+// Buscas numa fila e abertura de vídeo noutra (quem aperta tocar não espera o aquecimento das abas)
+const oneAtATime = lane();
+const playLane = lane();
+
 /** yt-dlp em modo lista (sem baixar nada): reserva quando a API não responde ou a cota acabou. */
 function ytdlpList(target) {
-  return new Promise((resolve, reject) => {
+  return oneAtATime(() => new Promise((resolve, reject) => {
     execFile(YTDLP, ['--flat-playlist', '-J', '--no-warnings', ...YTDLP_JS, '--extractor-args', 'youtube:lang=pt', target], { timeout: 60000, maxBuffer: 20 * 1024 * 1024 }, (err, out) => {
       if (err) return reject(err);
       try {
@@ -105,7 +121,7 @@ function ytdlpList(target) {
         })));
       } catch (e) { reject(e); }
     });
-  });
+  }));
 }
 
 // Abas da tela inicial. Sem chave da API, o "Em alta" do YouTube não existe mais (a página foi tirada em 2025):
@@ -219,13 +235,13 @@ function resolveStreams(id, q, force = false) {
   const key = `${id}:${q}`;
   const hit = direct.get(key);
   if (!force && hit && hit.until > Date.now()) return hit.promise;
-  const run = (fmt) => new Promise((resolve, reject) => {
+  const run = (fmt) => playLane(() => new Promise((resolve, reject) => {
     execFile(YTDLP, ['-f', fmt, '-g', '--no-playlist', '--no-warnings', ...YTDLP_JS, `https://www.youtube.com/watch?v=${id}`], { timeout: 60000 }, (err, out) => {
       const urls = String(out || '').trim().split('\n').filter((l) => l.startsWith('http'));
       if (err || !urls.length) return reject(err || new Error('sem URL'));
       resolve(urls);
     });
-  });
+  }));
   const promise = run(`bv*[height<=${q}][vcodec^=avc1][ext=mp4]+ba[ext=m4a]`)
     .then((u) => (u.length >= 2 ? { video: u[0], audio: u[1] } : { video: u[0], audio: null }))
     .catch(() => run('18').then((u) => ({ video: u[0], audio: null })))
