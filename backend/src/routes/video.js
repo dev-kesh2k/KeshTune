@@ -122,7 +122,7 @@ async function topArtists(userId) {
       WHERE h.user_id = $1 AND h.played_at > now() - interval '60 days' GROUP BY a.name ORDER BY count(*) DESC LIMIT 5`,
     [userId]
   );
-  return r.rows.map((x) => x.name);
+  return r.map((x) => x.name);
 }
 
 async function feed(cat, userId) {
@@ -279,6 +279,19 @@ const jobs = new Map(); // `${id}:${q}` -> { status: 'queued'|'running'|'done'|'
 const queue = [];
 let running = false;
 const fileOf = (id, q) => path.join(VIDEO_DIR, `${id}-${q}.mp4`);
+// O servidor roda em várias réplicas: o andamento vai num arquivo ao lado do vídeo para qualquer uma responder
+const stateOf = (id, q) => path.join(VIDEO_DIR, `${id}-${q}.json`);
+function writeState(id, q, job) {
+  try { fs.writeFileSync(stateOf(id, q), JSON.stringify({ status: job.status, progress: job.progress || 0, message: job.message || null, at: Date.now() })); } catch { /* sem disco */ }
+}
+function readState(id, q) {
+  try {
+    const st = JSON.parse(fs.readFileSync(stateOf(id, q), 'utf8'));
+    // Réplica que caiu no meio: estado parado há mais de 10 min vira erro (o app pede de novo)
+    if ((st.status === 'running' || st.status === 'queued') && Date.now() - st.at > 10 * 60 * 1000) return { ...st, status: 'error', message: 'Download interrompido' };
+    return st;
+  } catch { return null; }
+}
 
 function nextJob() {
   if (running) return;
@@ -289,6 +302,8 @@ function nextJob() {
   running = true;
   job.status = 'running';
   fs.mkdirSync(VIDEO_DIR, { recursive: true });
+  writeState(id, q, job);
+  let lastWrite = 0;
   const tmp = path.join(VIDEO_DIR, `${id}-${q}.part`);
   const p = spawn(YTDLP, [
     '-f', `bv*[height<=${q}][vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[height<=${q}][ext=mp4]/18`,
@@ -302,6 +317,7 @@ function nextJob() {
       if (/\[download\] Destination:/.test(line)) part++;
       const m = /\[download\]\s+([\d.]+)%/.exec(line);
       if (m) job.progress = Math.min(99, Math.round(part <= 1 ? Number(m[1]) * 0.9 : 90 + Number(m[1]) * 0.1));
+      if (m && Date.now() - lastWrite > 1500) { lastWrite = Date.now(); writeState(id, q, job); }
     }
   });
   let err = '';
@@ -314,10 +330,12 @@ function nextJob() {
       fs.renameSync(out, fileOf(id, q));
       job.status = 'done';
       job.progress = 100;
+      fs.rmSync(stateOf(id, q), { force: true });
     } else {
       job.status = 'error';
       job.message = 'Não foi possível baixar o vídeo';
       console.error('[video] download', id, code, err);
+      writeState(id, q, job);
       for (const f of fs.readdirSync(VIDEO_DIR)) if (f.startsWith(`${id}-${q}.part`)) fs.rmSync(path.join(VIDEO_DIR, f), { force: true });
     }
     running = false;
@@ -331,7 +349,7 @@ function jobView(id, q, userId) {
   if (fs.existsSync(f)) {
     return { status: 'done', progress: 100, size: fs.statSync(f).size, file: `vfile/${id}${signed('file', id, q, userId, 6 * 3600)}` };
   }
-  const j = jobs.get(key);
+  const j = jobs.get(key) || readState(id, q);
   return j ? { status: j.status, progress: j.progress || 0, message: j.message || null } : { status: 'none', progress: 0 };
 }
 
@@ -340,9 +358,12 @@ videoRouter.post('/video/downloads', ah(async (req, res) => {
   const id = ytId(req.body?.youtube_id);
   const q = quality(req.body?.q);
   const key = `${id}:${q}`;
-  const j = jobs.get(key);
+  const j = jobs.get(key) || readState(id, q);
   if (!fs.existsSync(fileOf(id, q)) && (!j || j.status === 'error')) {
-    jobs.set(key, { status: 'queued', progress: 0 });
+    const job = { status: 'queued', progress: 0 };
+    jobs.set(key, job);
+    fs.mkdirSync(VIDEO_DIR, { recursive: true });
+    writeState(id, q, job);
     queue.push(key);
     nextJob();
   }
@@ -358,6 +379,7 @@ videoRouter.delete('/video/downloads/:id', ah(async (req, res) => {
   const id = ytId(req.params.id);
   const q = quality(req.query.q);
   fs.rmSync(fileOf(id, q), { force: true });
+  fs.rmSync(stateOf(id, q), { force: true });
   jobs.delete(`${id}:${q}`);
   res.json({ ok: true });
 }));
