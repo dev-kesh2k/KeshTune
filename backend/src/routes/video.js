@@ -2,6 +2,7 @@
 // O vídeo passa pelo servidor (as URLs do googlevideo valem só para o IP de quem pediu), em até 720p H.264,
 // que a central decodifica pelo hardware. O download vira um MP4 (vídeo + áudio) que o app baixa e guarda.
 import { execFile, spawn } from 'child_process';
+import crypto from 'crypto';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -35,14 +36,32 @@ const isoDuration = (v) => {
 
 // ---------- Catálogo (YouTube Data API, com cache para poupar a cota) ----------
 
+// Cache em memória e em arquivo (uploads/videos/cache): as réplicas do servidor dividem o que já foi buscado.
+// Buscas iguais ao mesmo tempo esperam a mesma resposta.
 const cache = new Map(); // chave -> { at, items }
+const inflight = new Map();
+const CACHE_DIR = path.join(VIDEO_DIR, 'cache');
+const cacheFile = (key) => path.join(CACHE_DIR, `${crypto.createHash('sha1').update(key).digest('hex')}.json`);
 async function cached(key, ttlMs, fn) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < ttlMs) return hit.items;
-  const items = await fn();
-  cache.set(key, { at: Date.now(), items });
-  while (cache.size > 300) cache.delete(cache.keys().next().value);
-  return items;
+  try {
+    const f = JSON.parse(fs.readFileSync(cacheFile(key), 'utf8'));
+    if (Date.now() - f.at < ttlMs && f.items?.length) { cache.set(key, f); return f.items; }
+  } catch { /* sem arquivo */ }
+  if (inflight.has(key)) return inflight.get(key);
+  const p = (async () => {
+    const items = await fn();
+    const entry = { at: Date.now(), items };
+    cache.set(key, entry);
+    while (cache.size > 300) cache.delete(cache.keys().next().value);
+    if (items.length) {
+      try { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(cacheFile(key), JSON.stringify(entry)); } catch { /* sem disco */ }
+    }
+    return items;
+  })();
+  inflight.set(key, p);
+  try { return await p; } finally { inflight.delete(key); }
 }
 
 async function api(pathname, params) {
@@ -159,11 +178,19 @@ videoRouter.get('/video/feed', ah(async (req, res) => {
 
 /** Aquece as abas fixas (o yt-dlp leva alguns segundos por busca): no boot e a cada 2 h. */
 export function startVideoWarmup() {
+  // "Para você" dos donos de aparelho fixo (carro) fica sempre pronto: o cache dele vale 1 h e é refeito a cada 50 min
   const run = async () => {
+    const owners = await dbq(`SELECT DISTINCT user_id FROM device_keys WHERE revoked_at IS NULL`).catch(() => []);
+    for (const o of owners) {
+      cache.delete(`feed:pv:${o.user_id}`);
+      try { fs.rmSync(cacheFile(`feed:pv:${o.user_id}`), { force: true }); } catch { /* nada */ }
+      await feed('para-voce', o.user_id).catch(() => {});
+    }
     for (const cat of Object.keys(CATEGORIES)) if (CATEGORIES[cat]) await feed(cat).catch(() => {});
   };
-  setTimeout(run, 60 * 1000).unref();
-  setInterval(run, 2 * 3600 * 1000 + 60 * 1000).unref();
+  // Réplicas começam em horários diferentes; quem chegar depois já acha o arquivo pronto
+  setTimeout(run, (30 + Math.random() * 60) * 1000).unref();
+  setInterval(run, 50 * 60 * 1000).unref();
 }
 
 /** Busca de vídeos. */
