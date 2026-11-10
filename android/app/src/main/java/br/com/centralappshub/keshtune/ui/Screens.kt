@@ -97,12 +97,12 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
 
     Box(
         Modifier.fillMaxSize()
-            .background(Brush.radialGradient(listOf(Kesh.accentDeep.copy(alpha = 0.45f), Kesh.bg), radius = 1400f))
+            .keshBackdrop()
             .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            Modifier.widthIn(max = 440.dp).clip(RoundedCornerShape(28.dp)).background(Kesh.surface.copy(alpha = 0.85f)).padding(28.dp),
+            Modifier.widthIn(max = 440.dp).clip(RoundedCornerShape(28.dp)).background(Color(0x66000000)).padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -235,7 +235,7 @@ fun SearchScreen(nav: Nav, player: PlayerConnection, playingId: String?, vm: Sea
                     shelf("Álbuns", r.albums) { AlbumCardView(it) { nav.album(it.id) } }
                     shelf("Playlists", r.playlists) { PlaylistCardView(it) { nav.playlist(it.id) } }
                 }
-                if (s.youtube.isEmpty() && (r == null || (r.albums.isEmpty() && r.playlists.isEmpty())) && !s.loading) {
+                if (s.query.isNotBlank() && s.youtube.isEmpty() && (r == null || (r.albums.isEmpty() && r.playlists.isEmpty())) && !s.loading) {
                     item { Text("Nada encontrado para \"${s.query}\"", color = Kesh.muted, modifier = Modifier.padding(16.dp)) }
                 }
             }
