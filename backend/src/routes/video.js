@@ -42,10 +42,10 @@ const cache = new Map(); // chave -> { at, items }
 const inflight = new Map();
 const CACHE_DIR = path.join(VIDEO_DIR, 'cache');
 const cacheFile = (key) => path.join(CACHE_DIR, `${crypto.createHash('sha1').update(key).digest('hex')}.json`);
-async function cached(key, ttlMs, fn) {
+async function cached(key, ttlMs, fn, force = false) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < ttlMs) return hit.items;
-  try {
+  if (!force && hit && Date.now() - hit.at < ttlMs) return hit.items;
+  if (!force) try {
     const f = JSON.parse(fs.readFileSync(cacheFile(key), 'utf8'));
     if (Date.now() - f.at < ttlMs && f.items?.length) { cache.set(key, f); return f.items; }
   } catch { /* sem arquivo */ }
@@ -144,19 +144,20 @@ async function topArtists(userId) {
   return r.map((x) => x.name);
 }
 
-async function feed(cat, userId) {
+async function feed(cat, userId, force = false) {
   if (cat === 'para-voce') {
     const artists = await topArtists(userId);
     if (!artists.length) return feed('musica', userId);
-    return cached(`feed:pv:${userId}`, 60 * 60 * 1000, async () =>
-      interleave(await Promise.all(artists.map((a) => searchList(`${a} clipe`, 12).catch(() => [])))));
+    // Cache de 2 h; o aquecimento refaz a cada 50 min por cima (quem abrir nunca espera)
+    return cached(`feed:pv:${userId}`, 2 * 3600 * 1000, async () =>
+      interleave(await Promise.all(artists.map((a) => searchList(`${a} clipe`, 12, force).catch(() => [])))), force);
   }
   return cached(`feed:${cat}`, 2 * 3600 * 1000, async () =>
     interleave(await Promise.all(CATEGORIES[cat].map((t) => searchList(t, 20).catch(() => [])))));
 }
 
 /** Busca pelo yt-dlp (ou pela API, se houver chave), com cache. */
-function searchList(text, n) {
+function searchList(text, n, force = false) {
   return cached(`s:${n}:${text.toLowerCase()}`, 6 * 3600 * 1000, async () => {
     if (API_KEY) {
       try {
@@ -165,7 +166,7 @@ function searchList(text, n) {
       } catch (e) { console.error('[video] search API:', e.message); }
     }
     return ytdlpList(`ytsearch${n}:${text}`);
-  });
+  }, force);
 }
 
 videoRouter.use('/video', auth());
@@ -182,9 +183,10 @@ export function startVideoWarmup() {
   const run = async () => {
     const owners = await dbq(`SELECT DISTINCT user_id FROM device_keys WHERE revoked_at IS NULL`).catch(() => []);
     for (const o of owners) {
-      cache.delete(`feed:pv:${o.user_id}`);
-      try { fs.rmSync(cacheFile(`feed:pv:${o.user_id}`), { force: true }); } catch { /* nada */ }
-      await feed('para-voce', o.user_id).catch(() => {});
+      // Outra réplica já renovou há pouco: não repete
+      let fresh = false;
+      try { fresh = Date.now() - JSON.parse(fs.readFileSync(cacheFile(`feed:pv:${o.user_id}`), 'utf8')).at < 40 * 60 * 1000; } catch { /* sem arquivo */ }
+      if (!fresh) await feed('para-voce', o.user_id, true).catch(() => {});
     }
     for (const cat of Object.keys(CATEGORIES)) if (CATEGORIES[cat]) await feed(cat).catch(() => {});
   };
