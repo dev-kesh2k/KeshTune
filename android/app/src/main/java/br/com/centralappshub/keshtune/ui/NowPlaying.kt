@@ -59,7 +59,7 @@ import androidx.media3.common.Player
 import br.com.centralappshub.keshtune.playback.ConvertState
 
 /** Fundo do mini player, criado uma vez só. */
-private val MiniBrush = Brush.horizontalGradient(listOf(Color(0xFF2B1D52), Color(0xFF1C1830), Kesh.surface2))
+private val MiniBrush = Brush.horizontalGradient(listOf(Color(0x59000000), Color(0x40000000)))
 
 /** Cartão flutuante com a música atual; tocar abre o player em tela cheia. */
 @Composable
@@ -74,9 +74,8 @@ fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
         Modifier
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .fillMaxWidth()
-            .shadow(4.dp, shape)
-            .clip(shape)
-            .background(MiniBrush)
+            // Vidro translúcido como os painéis do Kesh Car: sem sombra (apareceria por baixo do vidro) e sem clip
+            .background(MiniBrush, shape)
             .clickable(onClick = onOpen),
     ) {
         Column {
