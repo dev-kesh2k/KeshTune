@@ -187,7 +187,7 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
     )
 
     Scaffold(
-        modifier = Modifier.background(Kesh.bg),
+        modifier = Modifier.keshBackdrop(),
         containerColor = Color.Transparent,
         contentColor = Color.White,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -267,8 +267,7 @@ private fun SideRail(selected: String, onSelect: (String) -> Unit) {
             .fillMaxHeight()
             .padding(start = 12.dp, top = 12.dp, bottom = 12.dp)
             .width(104.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(Kesh.surface.copy(alpha = 0.75f)),
+            .background(Kesh.surface, RoundedCornerShape(28.dp)),
     ) {
         // Tela baixa (celular deitado, algumas centrais): itens mais compactos para os quatro caberem inteiros
         val compact = maxHeight < 420.dp
