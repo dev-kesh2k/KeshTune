@@ -61,6 +61,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.translate
@@ -93,10 +94,10 @@ import coil3.size.Precision
 import coil3.transform.Transformation
 
 // Pincéis e cores fixos, criados uma vez só e não a cada quadro ou recomposição
-private val CoverBrush = Brush.linearGradient(listOf(Kesh.surface2, Kesh.accentDeep.copy(alpha = 0.35f)))
-private val ThinTrack = Color.White.copy(alpha = 0.12f)
+private val CoverBrush = Brush.linearGradient(listOf(Kesh.surface2, Color(0x334C1D95)))
+private val ThinTrack = Color.White.copy(alpha = 0.18f)
 private val SeekTrack = Color.White.copy(alpha = 0.16f)
-private val SeekFill = Brush.horizontalGradient(listOf(Kesh.accent, Kesh.accentSoft))
+private val SeekFill = SolidColor(Color.White)
 
 /**
  * Capa arredondada. O arredondado vai no próprio bitmap ([CoverShape], feito uma vez ao carregar), sem clip:
@@ -196,7 +197,7 @@ fun BlurredBackdrop(url: String?, modifier: Modifier = Modifier, strength: Float
         Box(
             Modifier.matchParentSize().background(
                 Brush.verticalGradient(
-                    listOf(Kesh.accentDeep.copy(alpha = if (withImage) 0.25f else 0.45f), Kesh.bg.copy(alpha = 0.7f), Kesh.bg),
+                    listOf(Color(0xFF1E1B4B).copy(alpha = if (withImage) 0.35f else 0.6f), Kesh.bg.copy(alpha = 0.75f), Kesh.bg),
                 )
             )
         )
@@ -295,7 +296,7 @@ fun TrackRow(track: Track, playing: Boolean, trailing: (@Composable () -> Unit)?
             // Camada própria e fundo arredondado desenhado (sem clip): rolar a lista não redesenha a linha
             .graphicsLayer()
             .padding(horizontal = 10.dp, vertical = 2.dp)
-            .background(if (playing) Kesh.accent.copy(alpha = 0.14f) else Color.Transparent, RoundedCornerShape(16.dp))
+            .background(if (playing) Color.White.copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(16.dp))
             .clickable(enabled = track.playable, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -424,28 +425,20 @@ fun ErrorBox(message: String, onRetry: () -> Unit) {
     }
 }
 
-/** Botão redondo com degradê roxo (tocar). O brilho em volta é um degradê desenhado, não uma sombra. */
+/** Botão redondo branco de tocar, como o do Kesh Car (ícone escuro, sem brilho colorido). */
 @Composable
 fun PlayCircle(size: Dp, playing: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         Modifier
             .size(size)
-            .drawWithCache {
-                // A sombra colorida de antes nem pegava a cor abaixo da API 28; este halo vale em todas
-                val r = this.size.minDimension * 0.75f
-                val c = Offset(this.size.width / 2f, this.size.height / 2f)
-                val halo = Brush.radialGradient(listOf(Kesh.accent.copy(alpha = .35f), Color.Transparent), center = c, radius = r)
-                onDrawBehind { drawCircle(halo, radius = r) }
-            }
-            .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(Kesh.accentSoft, Kesh.accent, Kesh.accentDeep)))
+            .background(Color.White, CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
             if (playing) "Pausar" else "Tocar",
-            tint = Color.White,
+            tint = Color(0xFF111827),
             modifier = Modifier.size(size * 0.55f),
         )
     }
@@ -562,17 +555,14 @@ fun SeekBar(fraction: () -> Float, enabled: Boolean, onSeek: (Float) -> Unit, mo
 
 /** Linha fina de progresso (mini player). [fraction] é lido só no draw. */
 @Composable
-fun ThinProgress(fraction: () -> Float, modifier: Modifier = Modifier) {
+fun ThinProgress(fraction: () -> Float, modifier: Modifier = Modifier, height: Dp = 3.dp) {
     Spacer(
-        modifier.fillMaxWidth().height(3.dp).drawBehind {
+        modifier.fillMaxWidth().height(height).drawBehind {
             val r = CornerRadius(size.height / 2)
             drawRoundRect(ThinTrack, cornerRadius = r)
             val w = size.width * fraction().coerceIn(0f, 1f)
             if (w > 0f) {
-                drawRoundRect(
-                    Brush.horizontalGradient(listOf(Kesh.accent, Kesh.accentSoft), startX = 0f, endX = w),
-                    size = Size(w, size.height), cornerRadius = r,
-                )
+                drawRoundRect(Color.White, size = Size(w, size.height), cornerRadius = r)
             }
         },
     )
