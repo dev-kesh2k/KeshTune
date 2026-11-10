@@ -308,7 +308,7 @@ private fun LibraryRow(title: String, subtitle: String?, image: String?, icon: I
             // Curtidas / Baixadas: bloco com degradê, como no app web
             Box(
                 Modifier.size(64.dp).clip(RoundedCornerShape(14.dp))
-                    .background(Brush.linearGradient(listOf(Kesh.accentDeep, Kesh.accent, Kesh.accentSoft))),
+                    .background(Brush.linearGradient(listOf(Color(0xFF4C1D95), Color(0xFF7C3AED)))),
                 contentAlignment = Alignment.Center,
             ) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(30.dp)) }
         } else {
