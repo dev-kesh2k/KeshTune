@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fundo do ícone: degradê roxo da marca com um brilho no canto superior esquerdo -->
+<!-- Fundo do ícone (modelo da família Kesh, deploy/icones-kesh no Hub): degradê roxo -> rosa com brilho no canto -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -8,26 +8,16 @@
     android:viewportHeight="108">
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="linear"
-                android:startX="18"
-                android:startY="18"
-                android:endX="90"
-                android:endY="90">
-                <item android:offset="0" android:color="#FFA78BFA" />
-                <item android:offset="0.55" android:color="#FF7C3AED" />
-                <item android:offset="1" android:color="#FF4C1D95" />
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="108" android:endY="108">
+                <item android:offset="0" android:color="#FF4C1D95" />
+                <item android:offset="1" android:color="#FFE11D48" />
             </gradient>
         </aapt:attr>
     </path>
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="radial"
-                android:centerX="28"
-                android:centerY="22"
-                android:gradientRadius="70">
-                <item android:offset="0" android:color="#47FFFFFF" />
+            <gradient android:type="radial" android:centerX="27" android:centerY="19" android:gradientRadius="76">
+                <item android:offset="0" android:color="#38FFFFFF" />
                 <item android:offset="1" android:color="#00FFFFFF" />
             </gradient>
         </aapt:attr>
