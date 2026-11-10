@@ -6,6 +6,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
+import { q as dbq } from '../db.js';
 import { auth, signStream, verifyStream } from '../security.js';
 import { ah, bad, notFound, str } from '../util.js';
 import { YTDLP_JS } from './imports.js';
@@ -88,52 +89,96 @@ function ytdlpList(target) {
   });
 }
 
-// Categorias da aba "Em alta" (ids de categoria do YouTube no Brasil)
-const CATEGORIES = { all: null, musica: '10', jogos: '20', esportes: '17', noticias: '25', entretenimento: '24', humor: '23', ciencia: '28', carros: '2' };
+// Abas da tela inicial. Sem chave da API, o "Em alta" do YouTube não existe mais (a página foi tirada em 2025):
+// cada aba é uma busca. "Para você" usa os artistas mais ouvidos no KeshTune.
+const CATEGORIES = {
+  'para-voce': null,
+  musica: ['clipe oficial lançamento', 'música nova 2025 clipe'],
+  futebol: ['futebol melhores momentos', 'gols da rodada'],
+  noticias: ['notícias hoje jornal', 'jornal nacional hoje'],
+  humor: ['humor brasileiro vídeo', 'stand up comedy brasil'],
+  games: ['gameplay português', 'jogos lançamento gameplay'],
+  carros: ['avaliação carro 2025', 'carros review brasil'],
+  ciencia: ['curiosidades ciência', 'documentário português'],
+};
+const LABELS = { 'para-voce': 'Para você', musica: 'Música', futebol: 'Futebol', noticias: 'Notícias', humor: 'Humor', games: 'Games', carros: 'Carros', ciencia: 'Ciência' };
 
-videoRouter.use('/video', auth());
-
-/** Em alta no Brasil, por categoria. */
-videoRouter.get('/video/feed', ah(async (req, res) => {
-  const cat = Object.hasOwn(CATEGORIES, req.query.cat) ? req.query.cat : 'all';
-  const items = await cached(`feed:${cat}`, 30 * 60 * 1000, async () => {
-    if (API_KEY) {
-      try {
-        const j = await api('videos', { part: 'snippet,contentDetails,statistics', chart: 'mostPopular', regionCode: 'BR', hl: 'pt', maxResults: '40', ...(CATEGORIES[cat] ? { videoCategoryId: CATEGORIES[cat] } : {}) });
-        return (j.items || []).map(fromVideo);
-      } catch (e) { console.error('[video] feed API:', e.message); }
+/** Junta várias listas alternando os itens (um de cada), sem repetir vídeo. */
+function interleave(lists, max = 40) {
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; out.length < max && lists.some((l) => i < l.length); i++) {
+    for (const l of lists) {
+      const v = l[i];
+      if (v && !seen.has(v.youtube_id) && !v.live) { seen.add(v.youtube_id); out.push(v); }
     }
-    return ytdlpList(`ytsearch30:${cat === 'all' ? 'em alta brasil' : cat}`);
-  });
-  res.json({ categories: Object.keys(CATEGORIES), items });
-}));
+  }
+  return out.slice(0, max);
+}
 
-/** Busca de vídeos (100 unidades da cota por busca na API; cache de 6 h). */
-videoRouter.get('/video/search', ah(async (req, res) => {
-  const text = str(req.query.q, 'Busca', { required: true, max: 120 });
-  const items = await cached(`q:${text.toLowerCase()}`, 6 * 3600 * 1000, async () => {
+async function topArtists(userId) {
+  const r = await dbq(
+    `SELECT a.name FROM play_history h JOIN track_artists ta ON ta.track_id = h.track_id JOIN artists a ON a.id = ta.artist_id
+      WHERE h.user_id = $1 AND h.played_at > now() - interval '60 days' GROUP BY a.name ORDER BY count(*) DESC LIMIT 5`,
+    [userId]
+  );
+  return r.rows.map((x) => x.name);
+}
+
+async function feed(cat, userId) {
+  if (cat === 'para-voce') {
+    const artists = await topArtists(userId);
+    if (!artists.length) return feed('musica', userId);
+    return cached(`feed:pv:${userId}`, 60 * 60 * 1000, async () =>
+      interleave(await Promise.all(artists.map((a) => searchList(`${a} clipe`, 12).catch(() => [])))));
+  }
+  return cached(`feed:${cat}`, 2 * 3600 * 1000, async () =>
+    interleave(await Promise.all(CATEGORIES[cat].map((t) => searchList(t, 20).catch(() => [])))));
+}
+
+/** Busca pelo yt-dlp (ou pela API, se houver chave), com cache. */
+function searchList(text, n) {
+  return cached(`s:${n}:${text.toLowerCase()}`, 6 * 3600 * 1000, async () => {
     if (API_KEY) {
       try {
-        const j = await api('search', { part: 'id', type: 'video', regionCode: 'BR', relevanceLanguage: 'pt', maxResults: '30', q: text });
+        const j = await api('search', { part: 'id', type: 'video', regionCode: 'BR', relevanceLanguage: 'pt', maxResults: String(n), q: text });
         return details((j.items || []).map((i) => i.id?.videoId).filter(Boolean));
       } catch (e) { console.error('[video] search API:', e.message); }
     }
-    return ytdlpList(`ytsearch30:${text}`);
+    return ytdlpList(`ytsearch${n}:${text}`);
   });
-  res.json({ items });
+}
+
+videoRouter.use('/video', auth());
+
+/** Abas da tela inicial. */
+videoRouter.get('/video/feed', ah(async (req, res) => {
+  const cat = Object.hasOwn(CATEGORIES, req.query.cat) ? req.query.cat : 'para-voce';
+  res.json({ categories: Object.keys(CATEGORIES).map((id) => ({ id, label: LABELS[id] })), items: await feed(cat, req.user.id) });
 }));
 
-/** Vídeos parecidos (o que tocar depois): busca pelo canal e pelo começo do título. */
+/** Aquece as abas fixas (o yt-dlp leva alguns segundos por busca): no boot e a cada 2 h. */
+export function startVideoWarmup() {
+  const run = async () => {
+    for (const cat of Object.keys(CATEGORIES)) if (CATEGORIES[cat]) await feed(cat).catch(() => {});
+  };
+  setTimeout(run, 60 * 1000).unref();
+  setInterval(run, 2 * 3600 * 1000 + 60 * 1000).unref();
+}
+
+/** Busca de vídeos. */
+videoRouter.get('/video/search', ah(async (req, res) => {
+  const text = str(req.query.q, 'Busca', { required: true, max: 120 });
+  res.json({ items: await searchList(text, 30) });
+}));
+
+/** Para tocar depois: mais vídeos do mesmo canal e do mesmo assunto (o app manda título e canal). */
 videoRouter.get('/video/related/:id', ah(async (req, res) => {
   const id = ytId(req.params.id);
-  const items = await cached(`rel:${id}`, 6 * 3600 * 1000, async () => {
-    const [v] = await details([id]).catch(() => []);
-    if (!v) return [];
-    const q = `${v.channel} ${v.title.split(/[|([-]/)[0]}`.slice(0, 100);
-    const j = await api('search', { part: 'id', type: 'video', regionCode: 'BR', relevanceLanguage: 'pt', maxResults: '20', q });
-    return (await details((j.items || []).map((i) => i.id?.videoId).filter((x) => x && x !== id)));
-  }).catch(() => []);
-  res.json({ items });
+  const title = String(req.query.title || '').split(/[|([\-]/)[0].trim().slice(0, 80);
+  const channel = String(req.query.channel || '').slice(0, 60);
+  const lists = await Promise.all([channel && searchList(channel, 15), title && searchList(title, 15)].filter(Boolean).map((p) => p.catch(() => [])));
+  res.json({ items: interleave(lists, 30).filter((v) => v.youtube_id !== id) });
 }));
 
 // ---------- Reprodução ----------
