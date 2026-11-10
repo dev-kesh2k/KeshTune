@@ -58,7 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -109,8 +108,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Fundo do app: um brilho roxo no topo, em vez do preto chapado. Criado uma vez só. */
-private val ShellBrush = Brush.verticalGradient(0f to Color(0xFF1A1233), 0.45f to Kesh.bg)
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -190,7 +187,7 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
     )
 
     Scaffold(
-        modifier = Modifier.background(ShellBrush),
+        modifier = Modifier.background(Kesh.bg),
         containerColor = Color.Transparent,
         contentColor = Color.White,
         snackbarHost = { SnackbarHost(snackbar) },

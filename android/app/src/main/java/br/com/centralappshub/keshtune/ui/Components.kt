@@ -68,7 +68,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -83,13 +82,15 @@ import br.com.centralappshub.keshtune.data.mediaUrl
 import br.com.centralappshub.keshtune.data.ytSmallCover
 import br.com.centralappshub.keshtune.playback.DownloadManager
 import coil3.compose.AsyncImage
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.shape.CornerBasedShape
 import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import coil3.request.transformations
 import coil3.size.Precision
 import coil3.transform.Transformation
-import kotlin.math.max
 
 // Pincéis e cores fixos, criados uma vez só e não a cada quadro ou recomposição
 private val CoverBrush = Brush.linearGradient(listOf(Kesh.surface2, Kesh.accentDeep.copy(alpha = 0.35f)))
@@ -98,19 +99,31 @@ private val SeekTrack = Color.White.copy(alpha = 0.16f)
 private val SeekFill = Brush.horizontalGradient(listOf(Kesh.accent, Kesh.accentSoft))
 
 /**
- * Capa arredondada. O fundo em degradê com a nota só é desenhado enquanto a imagem não carregou,
- * e direto no draw (sem Icon nem Box a mais): numa lista cheia de capas isso pesa.
+ * Capa arredondada. O arredondado vai no próprio bitmap ([CoverShape], feito uma vez ao carregar), sem clip:
+ * na GPU fraca da central, recortar dezenas de capas a cada quadro deixava a rolagem travando.
+ * O fundo em degradê com a nota só é desenhado enquanto a imagem não carregou, direto no draw.
  */
 @Composable
 fun Cover(url: String?, size: Dp, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(14.dp)) {
     val loaded = remember(url) { mutableStateOf(false) }
     val note = rememberVectorPainter(Icons.Default.MusicNote)
     val tint = remember { ColorFilter.tint(Kesh.muted) }
+    val density = LocalDensity.current
+    // Raio do canto em fração do lado (0.5 = círculo), lido do shape uma vez
+    val radius = remember(shape, size, density) {
+        val px = with(density) { size.toPx() }
+        when (shape) {
+            CircleShape -> 0.5f
+            is CornerBasedShape -> (shape.topStart.toPx(Size(px, px), density) / px).coerceIn(0f, 0.5f)
+            else -> 0f
+        }
+    }
     Box(
-        modifier.size(size).clip(shape).drawBehind {
+        modifier.size(size).drawBehind {
             // Estado lido só aqui: a imagem carregar redesenha a capa, mas não recompõe
             if (!loaded.value) {
-                drawRect(CoverBrush)
+                val r = this.size.minDimension * radius
+                drawRoundRect(CoverBrush, cornerRadius = CornerRadius(r, r))
                 val s = this.size.minDimension / 3f
                 translate((this.size.width - s) / 2f, (this.size.height - s) / 2f) {
                     with(note) { draw(Size(s, s), colorFilter = tint) }
@@ -118,39 +131,34 @@ fun Cover(url: String?, size: Dp, modifier: Modifier = Modifier, shape: Shape = 
             }
         },
     ) {
-        CoverImage(url, Modifier.fillMaxSize(), small = size <= 64.dp, onLoaded = { loaded.value = it })
-    }
-}
-
-/**
- * Recorte das capas hqdefault do YouTube: amplia 34% além do Crop para tirar as faixas pretas
- * (como o app web), sem o graphicsLayer de antes, que criava uma camada por capa.
- */
-private object YtHqCrop : ContentScale {
-    override fun computeScaleFactor(srcSize: Size, dstSize: Size): ScaleFactor {
-        val s = max(dstSize.width / srcSize.width, dstSize.height / srcSize.height) * 1.34f
-        return ScaleFactor(s, s)
+        CoverImage(url, Modifier.fillMaxSize(), small = size <= 64.dp, radius = radius, onLoaded = { loaded.value = it })
     }
 }
 
 /**
  * Imagem da capa. Nas pequenas (listas, mini player), as do YouTube usam a mqdefault (320x180, já 16:9 e sem
- * faixas pretas): baixa e decodifica bem menos que a hqdefault. [onLoaded] diz se a imagem chegou.
+ * faixas pretas): baixa e decodifica bem menos que a hqdefault. Nas grandes (hqdefault) amplia 34% além do
+ * corte para tirar as faixas pretas, como o app web. Recorte e cantos ([radius]) vão no bitmap.
+ * [onLoaded] diz se a imagem chegou.
  */
 @Composable
-fun CoverImage(url: String?, modifier: Modifier = Modifier, small: Boolean = false, onLoaded: ((Boolean) -> Unit)? = null) {
+fun CoverImage(url: String?, modifier: Modifier = Modifier, small: Boolean = false, radius: Float = 0f, onLoaded: ((Boolean) -> Unit)? = null) {
     val full = mediaUrl(url)
     // Mesma URL pequena que o DownloadManager e o preloadNext aquecem no disco (capa sem internet)
     val mq = remember(full) { ytSmallCover(full) }
-    val hq = mq != null
     val model = if (small && mq != null) mq else full
+    val zoom = if (mq != null && !small) 1.34f else 1f
+    val ctx = LocalContext.current
+    val request = remember(model, radius, zoom) {
+        ImageRequest.Builder(ctx).data(model).transformations(CoverShape(radius, zoom)).build()
+    }
     val onState: ((AsyncImagePainter.State) -> Unit)? = remember(onLoaded) {
         onLoaded?.let { cb -> { st: AsyncImagePainter.State -> cb(st is AsyncImagePainter.State.Success) } }
     }
     AsyncImage(
-        model = model,
+        model = request,
         contentDescription = null,
-        contentScale = if (hq && !small) YtHqCrop else ContentScale.Crop,
+        contentScale = ContentScale.FillBounds,
         modifier = modifier,
         onState = onState,
     )
@@ -284,9 +292,10 @@ fun TrackRow(track: Track, playing: Boolean, trailing: (@Composable () -> Unit)?
     Row(
         Modifier
             .fillMaxWidth()
+            // Camada própria e fundo arredondado desenhado (sem clip): rolar a lista não redesenha a linha
+            .graphicsLayer()
             .padding(horizontal = 10.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (playing) Kesh.accent.copy(alpha = 0.14f) else Color.Transparent)
+            .background(if (playing) Kesh.accent.copy(alpha = 0.14f) else Color.Transparent, RoundedCornerShape(16.dp))
             .clickable(enabled = track.playable, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -340,7 +349,7 @@ private fun Card(image: String?, title: String, subtitle: String?, round: Boolea
     Column(
         Modifier
             .width(140.dp)
-            .clip(RoundedCornerShape(20.dp))
+            // Sem clip (pesa na rolagem); o toque mostra o efeito sem recortar
             .clickable(onClick = onClick)
             .padding(8.dp),
         horizontalAlignment = if (round) Alignment.CenterHorizontally else Alignment.Start,
@@ -379,11 +388,14 @@ fun ArtistCardView(a: ArtistCard, onClick: () -> Unit) = Card(a.imageUrl, a.name
 fun <T> LazyListScope.shelf(title: String, items: List<T>, card: @Composable (T) -> Unit) {
     if (items.isEmpty()) return
     item(key = "shelf:$title", contentType = "shelf") {
-        Column(Modifier.padding(bottom = 16.dp)) {
+        // graphicsLayer: a prateleira vira uma camada (display list guardada). Rolar a lista de fora só move a
+        // camada, sem redesenhar os cards; na CPU fraca da central o redesenho era o que travava. O mesmo vale
+        // para cada card ao rolar a prateleira de lado.
+        Column(Modifier.graphicsLayer().padding(bottom = 16.dp)) {
             SectionTitle(title)
             val rowState = rememberLazyListState(prefetchStrategy = remember { LazyListPrefetchStrategy(nestedPrefetchItemCount = 8) })
             LazyRow(state = rowState, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                items(items) { card(it) }
+                items(items) { Box(Modifier.graphicsLayer()) { card(it) } }
             }
         }
     }
