@@ -1,6 +1,7 @@
 package br.com.centralappshub.keshtune.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,10 +59,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import br.com.centralappshub.keshtune.playback.ConvertState
 
-/** Fundo do mini player, criado uma vez só. */
-private val MiniBrush = Brush.horizontalGradient(listOf(Color(0x59000000), Color(0x40000000)))
+/** Fundo e contorno do mini player (vidro escuro, como os painéis do Kesh Car), criados uma vez só. */
+private val MiniBrush = Brush.horizontalGradient(listOf(Color(0x66000000), Color(0x4D000000)))
+private val MiniBorder = Color.White.copy(alpha = 0.10f)
 
-/** Cartão flutuante com a música atual; tocar abre o player em tela cheia. */
+/**
+ * Barra da música atual, embaixo. Botões à esquerda (perto do motorista), depois nome, artista e o progresso
+ * com o tempo; capa à direita. Tocar fora dos botões abre o player em tela cheia.
+ */
 @Composable
 fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
@@ -70,46 +75,54 @@ fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     val meta = item.mediaMetadata
     val shape = RoundedCornerShape(24.dp)
 
-    Box(
+    Row(
         Modifier
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .fillMaxWidth()
-            // Vidro translúcido como os painéis do Kesh Car: sem sombra (apareceria por baixo do vidro) e sem clip
+            // Sem sombra (apareceria por baixo do vidro) e sem clip (pesa na GPU da central)
             .background(MiniBrush, shape)
-            .clickable(onClick = onOpen),
+            .border(1.dp, MiniBorder, shape)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
-            Row(Modifier.padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Botões à esquerda, perto do motorista; música e capa à direita
-                IconButton(vm.player::previous, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, "Anterior", Modifier.size(32.dp)) }
-                PlayPause(s.isPlaying, s.buffering, 54.dp) { vm.player.toggle() }
-                IconButton(vm.player::next, Modifier.size(56.dp)) { Icon(Icons.Default.SkipNext, "Próxima", Modifier.size(32.dp)) }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                    Text(
-                        meta.title?.toString().orEmpty(), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        converting.takeIf { it?.trackId == item.mediaId }?.let(::convertText) ?: meta.artist?.toString().orEmpty(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (converting?.trackId == item.mediaId) Kesh.accentSoft else Kesh.muted,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Cover(meta.artworkUri?.toString(), 56.dp, shape = RoundedCornerShape(14.dp))
-            }
-            MiniProgress(vm, Modifier.padding(horizontal = 18.dp).padding(bottom = 8.dp))
+        IconButton(vm.player::previous, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, "Anterior", Modifier.size(34.dp)) }
+        PlayPause(s.isPlaying, s.buffering, 60.dp) { vm.player.toggle() }
+        IconButton(vm.player::next, Modifier.size(56.dp)) { Icon(Icons.Default.SkipNext, "Próxima", Modifier.size(34.dp)) }
+        Spacer(Modifier.width(18.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                meta.title?.toString().orEmpty(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                converting.takeIf { it?.trackId == item.mediaId }?.let(::convertText) ?: meta.artist?.toString().orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (converting?.trackId == item.mediaId) Kesh.accentSoft else Kesh.muted,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            MiniProgress(vm)
         }
+        Spacer(Modifier.width(16.dp))
+        Cover(meta.artworkUri?.toString(), 64.dp, shape = RoundedCornerShape(14.dp))
     }
 }
 
-/** Progresso do mini player isolado: a posição muda a cada meio segundo e só esta linha é redesenhada. */
+/**
+ * Progresso do mini player com o tempo ao lado, isolado: a posição muda a cada meio segundo e só este trecho
+ * é redesenhado (a barra só no draw; o texto do tempo só muda uma vez por segundo).
+ */
 @Composable
-private fun MiniProgress(vm: PlayerViewModel, modifier: Modifier) {
+private fun MiniProgress(vm: PlayerViewModel) {
     val progress = vm.progress.collectAsStateWithLifecycle(0L to 0L)
-    ThinProgress({ val (p, d) = progress.value; if (d > 0) p.toFloat() / d else 0f }, modifier)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ThinProgress({ val (p, d) = progress.value; if (d > 0) p.toFloat() / d else 0f }, Modifier.weight(1f), height = 5.dp)
+        Spacer(Modifier.width(12.dp))
+        // Sem duração conhecida (ainda carregando) o tempo fica escondido
+        val label by remember { derivedStateOf { val (p, d) = progress.value; if (d > 0) "${fmtTime(p)} / ${fmtTime(d)}" else "" } }
+        if (label.isNotEmpty()) Text(label, style = MaterialTheme.typography.bodyMedium, color = Kesh.muted, maxLines = 1)
+    }
 }
 
 /** Botão branco redondo (tocar/pausar), com indicador enquanto carrega. */
@@ -232,9 +245,9 @@ private fun convertText(c: ConvertState) =
 private fun BigPlay(playing: Boolean, buffering: Boolean, onClick: () -> Unit) {
     if (buffering && !playing) {
         Box(
-            Modifier.size(88.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Kesh.accentSoft, Kesh.accent, Kesh.accentDeep))),
+            Modifier.size(88.dp).background(Color.White, CircleShape),
             contentAlignment = Alignment.Center,
-        ) { CircularProgressIndicator(Modifier.size(40.dp), color = Color.White, strokeWidth = 3.dp) }
+        ) { CircularProgressIndicator(Modifier.size(40.dp), color = Color(0xFF111827), strokeWidth = 3.dp) }
     } else {
         PlayCircle(88.dp, playing = playing, onClick = onClick)
     }
@@ -295,9 +308,9 @@ private fun CurrentTime(progress: State<Pair<Long, Long>>, dragging: () -> Float
 @Composable
 private fun ToggleIcon(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.size(60.dp).clip(CircleShape).background(if (on) Kesh.accent.copy(alpha = 0.18f) else Color.Transparent).clickable(onClick = onClick),
+        Modifier.size(60.dp).clip(CircleShape).background(if (on) Color.White.copy(alpha = 0.16f) else Color.Transparent).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, label, tint = if (on) Kesh.accentSoft else Kesh.muted, modifier = Modifier.size(30.dp))
+        Icon(icon, label, tint = if (on) Color.White else Kesh.muted, modifier = Modifier.size(30.dp))
     }
 }

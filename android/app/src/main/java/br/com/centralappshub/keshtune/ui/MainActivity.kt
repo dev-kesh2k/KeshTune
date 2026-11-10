@@ -6,6 +6,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -88,12 +91,29 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var player: PlayerConnection
     @Inject lateinit var downloads: DownloadManager
 
+    /**
+     * Barra de cima da central (e a de navegação) recolhidas, como no Kesh Car: aparecem puxando da borda e
+     * somem sozinhas depois de alguns segundos.
+     */
+    private fun hideSystemBars() {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // App sempre escuro: ícones da barra de status claros mesmo com o sistema em tema claro
         enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         // Na central do carro a tela fica sempre ligada com o app aberto
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        hideSystemBars()
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
         }
@@ -182,7 +202,7 @@ private fun AppShell(player: PlayerConnection, downloads: DownloadManager) {
     var lastTab by rememberSaveable { mutableStateOf("home") }
     val barColors = NavigationBarItemDefaults.colors(
         selectedIconColor = Color.White, selectedTextColor = Color.White,
-        indicatorColor = Kesh.accent.copy(alpha = 0.35f),
+        indicatorColor = Color.White.copy(alpha = 0.16f),
         unselectedIconColor = Kesh.muted, unselectedTextColor = Kesh.muted,
     )
 
@@ -281,8 +301,7 @@ private fun SideRail(selected: String, onSelect: (String) -> Unit) {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (on) Kesh.accent.copy(alpha = 0.28f) else Color.Transparent)
+                        .background(if (on) Color.White.copy(alpha = 0.16f) else Color.Transparent, RoundedCornerShape(20.dp))
                         .clickable { onSelect(t.route) }
                         .padding(vertical = if (compact) 7.dp else 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
