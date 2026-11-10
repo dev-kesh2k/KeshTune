@@ -1,29 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ícone temático (Android 13+): o sistema pinta com a cor do tema -->
+<!-- Ícone temático (Android 13+): contorno do disco e o K -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:pathData="M35.5,36.5L35.5,71.5"
-        android:strokeWidth="9"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M61,34L43,54L61,74"
-        android:strokeWidth="9"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <path
-        android:pathData="M65.6,46.6A11,11 0,0 1,65.6 61.4"
-        android:strokeWidth="5.5"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round" />
-    <path
-        android:pathData="M71.2,41.2A19,19 0,0 1,71.2 66.8"
-        android:strokeWidth="4.5"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round" />
+    <path android:pathData="M54,26a28,28 0,1 1,0 56a28,28 0,1 1,0 -56z" android:strokeWidth="5" android:strokeColor="#FFFFFFFF" />
+    <path android:pathData="M47,40L47,68" android:strokeWidth="6" android:strokeColor="#FFFFFFFF" android:strokeLineCap="round" />
+    <path android:pathData="M62,44L52,54L62,64" android:strokeWidth="6" android:strokeColor="#FFFFFFFF" android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>
