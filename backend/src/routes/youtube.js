@@ -394,14 +394,14 @@ youtubeRouter.get('/youtube/stream/:id', ah(async (req, res) => {
 const CHUNK = 2 * 1024 * 1024;
 
 /** "bytes=início-[fim]" (ou nada = do começo). O formato "bytes=-N" (últimos N) não é dividido em pedaços. */
-function parseRange(h) {
+export function parseRange(h) {
   if (!h) return { start: 0, end: null };
   const m = /^bytes=(\d+)-(\d*)$/.exec(h);
   return m ? { start: Number(m[1]), end: m[2] ? Number(m[2]) : null } : null;
 }
 
 /** Faixa pedida ao googlevideo, limitada a um pedaço a partir de "start" (o fim pedido pelo app vale se for antes). */
-const chunkRange = (start, end) => (end != null ? `bytes=${start}-${Math.min(end, start + CHUNK - 1)}` : `bytes=${start}-${start + CHUNK - 1}`);
+export const chunkRange = (start, end) => (end != null ? `bytes=${start}-${Math.min(end, start + CHUNK - 1)}` : `bytes=${start}-${start + CHUNK - 1}`);
 
 /** Espera o app ler o que já foi enviado (ou desistir da conexão). */
 function drained(res) {
@@ -417,7 +417,7 @@ function drained(res) {
 }
 
 /** Escreve o primeiro pedaço (já pedido) e busca os seguintes em sequência, respeitando o ritmo de leitura do app. */
-async function sendChunks(url, first, start, end, res, isClosed) {
+export async function sendChunks(url, first, start, end, res, isClosed) {
   let pos = start;
   let up = first;
   let ac = null;
