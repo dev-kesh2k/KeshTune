@@ -9,6 +9,8 @@ on:
       - '**.md'
       - 'LICENSE'
       - 'docs/**'
+      - '.editorconfig'
+      - '.gitattributes'
       - 'android/**'
   workflow_dispatch:
 
