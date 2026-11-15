@@ -1,5 +1,7 @@
 # KeshTune
 
+[![Testes](https://github.com/dev-kesh2k/KeshTune/actions/workflows/ci.yml/badge.svg)](https://github.com/dev-kesh2k/KeshTune/actions/workflows/ci.yml)
+
 Streaming de música (web + celular) conforme a especificação técnica — fase 1 (P0).
 
 - **Fonte do conteúdo:** opção D (híbrida) da seção 13.1 — biblioteca própria (arquivos enviados pelo admin; toca offline e sem anúncios) + faixas do YouTube pelo player oficial incorporado (só online).
@@ -84,3 +86,14 @@ Por usuário (ou por IP sem login): 100 escritas e 600 leituras por minuto, por 
 - Nada de segredo no repositório (é público): senhas, `JWT_SECRET` e chaves ficam só no `.env` do servidor; o `.env.example` vai sempre com os valores vazios.
 - Senhas com hash, sessões revogáveis, 2FA (TOTP) opcional e auditoria das ações do admin.
 - Para avisar uma falha, veja o [SECURITY.md](SECURITY.md).
+
+## Testes
+
+Testes do backend com o executor nativo do Node (`node:test`), sem banco e sem servidor rodando:
+
+```bash
+npm ci --prefix backend   # o KeshTune importa pg e jsonwebtoken nos testes
+node --test backend/test/*.test.js
+```
+
+Cobrem as regras puras do backend (csv, offline-keys, passwords, rate-limit, stream-url, totp, uuid, validate). O GitHub Actions roda os mesmos testes em cada push e pull request (workflow `Testes`); mudanças só em `backend/test/` não republicam o app.
