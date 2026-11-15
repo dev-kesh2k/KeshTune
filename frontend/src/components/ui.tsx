@@ -15,7 +15,7 @@ export function PageLoading() {
 export function Empty({ icon, title, text, action }: { icon?: ReactNode; title: string; text?: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-4 py-14 text-center">
-      <div className="text-muted">{icon || <Music2 className="h-10 w-10" />}</div>
+      <div className="text-muted" aria-hidden="true">{icon || <Music2 className="h-10 w-10" />}</div>
       <p className="text-lg font-semibold">{title}</p>
       {text && <p className="max-w-sm text-sm text-muted">{text}</p>}
       {action}
