@@ -18,7 +18,8 @@ export function fmtBytes(n: number) {
   if (!Number.isFinite(n) || n < 0) n = 0;
   if (n < 1024) return `${n} B`;
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
-  return `${(n / 1024 ** 3).toFixed(2)} GB`;
+  // Vírgula decimal, como no resto do app (antes "5.5 MB").
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1).replace('.', ',')} MB`;
+  return `${(n / 1024 ** 3).toFixed(2).replace('.', ',')} GB`;
 }
 export const albumType = (t: string) => ({ album: 'Álbum', single: 'Single', ep: 'EP', compilation: 'Coletânea' })[t] || 'Álbum';
