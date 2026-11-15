@@ -113,6 +113,8 @@ export function csvEscape(v) {
 
 /** Parser CSV simples (aspas, vírgula ou ponto e vírgula). */
 export function parseCsv(text) {
+  // Planilha salva pelo Excel ("CSV UTF-8") começa com BOM e o 1º cabeçalho viraria "\uFEFFtitulo"
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   const firstLine = text.split(/\r?\n/, 1)[0] || '';
   const sep = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
   const rows = [];
