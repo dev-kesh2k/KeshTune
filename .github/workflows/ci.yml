@@ -18,5 +18,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - name: Dependências
         run: npm ci --prefix backend --ignore-scripts --no-audit --no-fund
+      - name: Lint (variável sem declarar/importar)
+        run: npx --yes eslint@9 --config backend/eslint.config.js backend
       - name: Testes do backend
         run: node --test backend/test/*.test.js
