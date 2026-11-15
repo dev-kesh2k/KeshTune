@@ -50,3 +50,14 @@ A busca do app mostra também a seção **Do YouTube**. Tocar um resultado, ou a
 - Compilar no servidor do Hub: `docker run --rm -v "$PWD/android":/work -w /work -v hub-gradle-cache:/root/.gradle hub-keshtune-builder ./gradlew --no-daemon -q assembleProdRelease` (imagem em `deploy/apk-builder/keshtune-kotlin` do Hub).
 - **Desempenho na central (RK3326, tela 54 Hz):** capas arredondadas e recortadas no próprio bitmap (`ui/CoverShape.kt`, transformação do Coil), sem `clip` por capa; prateleiras, cards e linhas de música em `graphicsLayer()` (rolar só move a camada); fundo liso. Instalado por `adb install` o Android não aplica o baseline profile: depois de instalar rode `adb shell cmd package compile -m speed -f br.com.centralappshub.keshtune`.
 - **Login automático da multimídia:** com `android/device.properties` (`deviceKey=…`, fora do git) o APK entra sozinho na conta dona da chave (`POST /auth/device`, tabela `device_keys`, só o SHA-256 no banco) e esconde o "Sair". Sem o arquivo, o app pede login normal. Revogar: `UPDATE device_keys SET revoked_at = now() WHERE label = 'Multimídia do carro'`.
+
+## Rodar localmente
+
+```bash
+# backend (precisa de um Postgres com as extensões pg_trgm e unaccent)
+cd backend && cp .env.example .env   # preencha DATABASE_URL, JWT_SECRET (32+ caracteres) e o admin inicial
+npm install && npm start             # aplica as migrations e sobe em http://localhost:3000
+
+# frontend
+cd frontend && npm install && npm run dev
+```
