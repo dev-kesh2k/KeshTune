@@ -42,8 +42,11 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(req)
         .then((r) => {
-          const copy = r.clone();
-          caches.open(CACHE).then((c) => c.put(BASE, copy));
+          // só guarda resposta boa: um 502 durante o deploy viraria a tela do app sem internet
+          if (r.ok) {
+            const copy = r.clone();
+            caches.open(CACHE).then((c) => c.put(BASE, copy));
+          }
           return r;
         })
         .catch(() => caches.match(BASE))
