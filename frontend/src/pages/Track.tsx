@@ -3,6 +3,7 @@ import { Heart, ListPlus, Radio, Share2 } from 'lucide-react';
 import { artistNames, fmtDate, fmtTime } from '../lib/format';
 import { usePlayer } from '../lib/player';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { Track as T } from '../lib/types';
 import { CollectionHeader, PlayActions } from '../components/Collection';
 import { useUi } from '../components/TrackActions';
@@ -19,6 +20,7 @@ const ROLE: Record<string, string> = { main: 'Artista principal', featured: 'Par
 export default function Track() {
   const { id } = useParams();
   const { data, error, loading, offline, reload } = useFetch<Detail>(`tracks/${id}`, [id]);
+  useTitle(data?.title);
   const player = usePlayer();
   const ui = useUi();
   if (loading) return <PageLoading />;

@@ -5,6 +5,7 @@ import { albumType, fmtDate, fmtTotal } from '../lib/format';
 import { usePlayer } from '../lib/player';
 import { useToast } from '../lib/toast';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { AlbumCard, ArtistRef, Track } from '../lib/types';
 import { CollectionHeader, PlayActions } from '../components/Collection';
 import { AlbumTile } from '../components/Tiles';
@@ -18,6 +19,7 @@ type Album = AlbumCard & { label: string | null; upc: string | null; saved: bool
 export default function Album() {
   const { id } = useParams();
   const { data, setData, error, loading, offline, reload } = useFetch<Album>(`albums/${id}`, [id]);
+  useTitle(data?.title);
   const player = usePlayer();
   const ui = useUi();
   const toast = useToast();
