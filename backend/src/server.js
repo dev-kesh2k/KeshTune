@@ -31,6 +31,7 @@ api.use((req, res, next) => {
   req.id = req.get('x-request-id') || token(8);
   res.set('X-Request-Id', req.id);
   res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'no-referrer');
   next();
 });
 // gzip nas respostas JSON; fica de fora o áudio (já comprimido) e o SSE (precisa sair na hora)
