@@ -137,7 +137,7 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <section className="mb-8 min-w-0">
       <div className="mb-3 flex items-end justify-between gap-3">
-        <h2 className="min-w-0 truncate text-[clamp(1.15rem,4.5vw,1.5rem)] font-bold">{title}</h2>
+        <h2 className="min-w-0 truncate text-[clamp(1.15rem,4.5vw,1.5rem)] font-bold" title={title}>{title}</h2>
         {action}
       </div>
       {children}
