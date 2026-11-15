@@ -10,9 +10,10 @@ export function fmtTime(ms: number) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 export function fmtTotal(ms: number) {
-  const min = Math.round(ms / 60000);
+  const min = Number.isFinite(ms) && ms > 0 ? Math.round(ms / 60000) : 0;
   if (min < 60) return `${min} min`;
-  return `${Math.floor(min / 60)} h ${min % 60} min`;
+  const h = Math.floor(min / 60);
+  return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
 }
 export function mediaUrl(u: string | null | undefined) {
   if (!u) return null;
