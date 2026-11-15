@@ -42,7 +42,7 @@ api.use(express.json({ limit: '1mb' }));
 
 api.get('/health', ah(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, service: 'spotify-x', time: new Date().toISOString() });
+  res.json({ ok: true, service: 'keshtune', time: new Date().toISOString() });
 }));
 
 // Configuração pública mínima para o app
