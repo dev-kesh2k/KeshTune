@@ -24,8 +24,8 @@ export function Empty({ icon, title, text, action }: { icon?: ReactNode; title: 
 }
 export function ErrorBox({ text, onRetry, offline }: { text: string; onRetry?: () => void; offline?: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-4 py-14 text-center">
-      {offline && <WifiOff className="h-10 w-10 text-muted" />}
+    <div className="flex flex-col items-center gap-3 px-4 py-14 text-center" role="alert">
+      {offline && <WifiOff className="h-10 w-10 text-muted" aria-hidden="true" />}
       <p className="max-w-sm text-sm text-muted">{text}</p>
       {onRetry && (
         <button className="btn-secondary" onClick={onRetry}>
