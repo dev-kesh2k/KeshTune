@@ -14,6 +14,7 @@ import { usePlayer } from '../lib/player';
 import { onRealtime } from '../lib/realtime';
 import { useToast } from '../lib/toast';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { PlaylistDetail, PlaylistItem, Track } from '../lib/types';
 import { CollectionHeader, PlayActions } from '../components/Collection';
 import { TrackListHeader, TrackRow } from '../components/TrackList';
@@ -75,6 +76,7 @@ export default function Playlist() {
   const player = usePlayer();
   const ui = useUi();
   const { data, setData, error, loading, offline, reload } = useFetch<PlaylistDetail>(`playlists/${id}`, [id]);
+  useTitle(data?.name);
   const [sort, setSort] = useState<SortKey>('custom');
   const [dir, setDir] = useState<'asc' | 'desc'>('asc');
   const [filter, setFilter] = useState('');
