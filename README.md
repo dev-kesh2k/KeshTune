@@ -66,7 +66,7 @@ cd frontend && npm install && npm run dev
 
 ## API: saúde e formato de erro
 
-- `GET /api/health` → `{ ok, service: "keshtune", time, uptime_s }` (consulta o banco; usado pelo balanceador).
+- `GET /api/health` → `{ ok, db, dbMs, service: "keshtune", time, uptime_s }` (consulta o banco; usado pelo balanceador e pelo Monitoramento do Hub). Sem banco: **503** `{ ok: false, db: "erro" }`.
 - `GET /api/config` → opções públicas (offline, YouTube, limites), sem cache.
 - Todo erro volta como `{ "error": { "code", "message", "request_id" } }`; o mesmo `request_id` sai no cabeçalho `X-Request-Id` e no log do servidor.
 
