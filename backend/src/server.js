@@ -49,6 +49,7 @@ api.get('/health', ah(async (_req, res) => {
 // Configuração pública mínima para o app
 api.get('/config', ah(async (_req, res) => {
   const s = await getSettings();
+  res.set('Cache-Control', 'no-store'); // o admin muda e o app precisa ver na hora
   res.json({ offline_enabled: s.offline_enabled, youtube_enabled: s.youtube_enabled, max_offline_devices: s.max_offline_devices, max_offline_tracks: s.max_offline_tracks, server_time: new Date().toISOString() });
 }));
 
