@@ -26,6 +26,7 @@ export function fmtDate(d: string | null | undefined, opts: Intl.DateTimeFormatO
   return date.toLocaleDateString('pt-BR', opts);
 }
 export function fmtBytes(n: number) {
+  if (!Number.isFinite(n) || n < 0) n = 0;
   if (n < 1024) return `${n} B`;
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
