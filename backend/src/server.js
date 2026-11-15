@@ -97,6 +97,7 @@ api.use((err, req, res, _next) => {
   let code = err.code || 'INTERNAL';
   let message = err.message;
   if (err.type === 'entity.parse.failed') { status = 400; code = 'INVALID_JSON'; message = 'JSON inválido'; }
+  if (err.type === 'entity.too.large') { status = 413; code = 'PAYLOAD_TOO_LARGE'; message = 'Conteúdo grande demais'; }
   if (err.name === 'MulterError') {
     status = 400; code = 'UPLOAD_ERROR';
     message = err.code === 'LIMIT_FILE_SIZE' ? 'Arquivo grande demais' : 'Falha no envio do arquivo';
