@@ -67,3 +67,7 @@ cd frontend && npm install && npm run dev
 - `GET /api/health` → `{ ok, service: "keshtune", time, uptime_s }` (consulta o banco; usado pelo balanceador).
 - `GET /api/config` → opções públicas (offline, YouTube, limites), sem cache.
 - Todo erro volta como `{ "error": { "code", "message", "request_id" } }`; o mesmo `request_id` sai no cabeçalho `X-Request-Id` e no log do servidor.
+
+## Limites de requisição
+
+Por usuário (ou por IP sem login): 100 escritas e 600 leituras por minuto, por réplica. Áudio, imagens, downloads offline e o SSE ficam fora. As respostas trazem `RateLimit-Limit`, `RateLimit-Remaining` e `RateLimit-Reset`; acima do limite a API responde `429` com `Retry-After`.
