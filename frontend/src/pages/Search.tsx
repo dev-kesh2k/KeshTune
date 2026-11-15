@@ -6,6 +6,7 @@ import { mediaUrl } from '../lib/format';
 
 import { usePlayer } from '../lib/player';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { AlbumCard, ArtistCard, Genre, PlaylistCard, Track } from '../lib/types';
 import { Cover, Empty, ErrorBox, PageLoading, Section, Spinner } from '../components/ui';
 import { AlbumTile, ArtistTile, PlaylistTile, tileGrid } from '../components/Tiles';
@@ -29,6 +30,7 @@ function saveHistory(body: Record<string, unknown>) {
 }
 
 export default function Search() {
+  useTitle('Buscar');
   const [params, setParams] = useSearchParams();
   const nav = useNavigate();
   const player = usePlayer();
