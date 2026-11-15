@@ -43,7 +43,8 @@ api.use(express.json({ limit: '1mb' }));
 
 api.get('/health', ah(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, service: 'keshtune', time: new Date().toISOString() });
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, service: 'keshtune', time: new Date().toISOString(), uptime_s: Math.round(process.uptime()) });
 }));
 
 // Configuração pública mínima para o app
