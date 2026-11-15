@@ -5,6 +5,7 @@ import { api, errText } from '../lib/api';
 import { usePlayer } from '../lib/player';
 import { useToast } from '../lib/toast';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { AlbumCard, PlaylistCard, Track } from '../lib/types';
 import { CollectionHeader, PlayActions } from '../components/Collection';
 import { AlbumTile, PlaylistTile } from '../components/Tiles';
@@ -23,6 +24,7 @@ type Artist = {
 export default function Artist() {
   const { id } = useParams();
   const { data, setData, error, loading, offline, reload } = useFetch<Artist>(`artists/${id}`, [id]);
+  useTitle(data?.name);
   const player = usePlayer();
   const ui = useUi();
   const toast = useToast();
