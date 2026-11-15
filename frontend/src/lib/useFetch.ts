@@ -32,7 +32,10 @@ export function useFetch<T>(path: string | null, deps: unknown[] = []) {
     [path, ...deps]
   );
   useEffect(() => {
+    // Ao trocar de página o erro da anterior não pode ficar na tela enquanto a nova carrega
     setData(null);
+    setError(null);
+    setOffline(false);
     load();
   }, [load]);
   return { data, setData, error, offline, loading, reload: load };
