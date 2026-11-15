@@ -12,6 +12,9 @@ on:
       - '.editorconfig'
       - '.gitattributes'
       - 'android/**'
+      # Testes e CI de testes: não mudam o app no ar.
+      - 'backend/test/**'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 env:
