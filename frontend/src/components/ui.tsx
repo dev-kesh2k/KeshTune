@@ -51,7 +51,7 @@ export function Sheet({ open, onClose, title, children, wide }: { open: boolean;
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
       <button className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Fechar" onClick={onClose} />
       <div
         className={`relative flex max-h-[90dvh] w-full flex-col rounded-t-3xl bg-surface2 ring-1 ring-line md:rounded-2xl ${wide ? 'md:max-w-2xl' : 'md:max-w-md'}`}
