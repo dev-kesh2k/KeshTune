@@ -78,3 +78,9 @@ Por usuário (ou por IP sem login): 100 escritas e 600 leituras por minuto, por 
 - `src/routes/*.js`: uma rota por assunto (auth, catálogo, busca, playlists, biblioteca, reprodução, offline, admin, importação, YouTube, vídeo).
 - `src/security.js`: senhas, tokens JWT, sessões, 2FA e auditoria. `src/util.js`: validação, CSV, limitador e erros.
 - `migrations/*.sql`: aplicadas em ordem no start (`src/migrate.js`).
+
+## Segurança
+
+- Nada de segredo no repositório (é público): senhas, `JWT_SECRET` e chaves ficam só no `.env` do servidor; o `.env.example` vai sempre com os valores vazios.
+- Senhas com hash, sessões revogáveis, 2FA (TOTP) opcional e auditoria das ações do admin.
+- Para avisar uma falha, veja o [SECURITY.md](SECURITY.md).
