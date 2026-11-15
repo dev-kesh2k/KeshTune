@@ -28,7 +28,7 @@ export function ErrorBox({ text, onRetry, offline }: { text: string; onRetry?: (
       {offline && <WifiOff className="h-10 w-10 text-muted" aria-hidden="true" />}
       <p className="max-w-sm text-sm text-muted">{text}</p>
       {onRetry && (
-        <button className="btn-secondary" onClick={onRetry}>
+        <button type="button" className="btn-secondary" onClick={onRetry}>
           Tentar de novo
         </button>
       )}
