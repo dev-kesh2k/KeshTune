@@ -3,6 +3,7 @@ import { Shield } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { usePlayer, type PlayContext } from '../lib/player';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { AlbumCard, ArtistCard, PlaylistCard, Track } from '../lib/types';
 import { Empty, ErrorBox, PageLoading, Section, Shelf } from '../components/ui';
 import { AlbumTile, ArtistTile, PlaylistTile, TrackTile } from '../components/Tiles';
@@ -41,6 +42,7 @@ function TrackShelf({ title, tracks, ctx }: { title: string; tracks: Track[]; ct
 }
 
 export default function Home() {
+  useTitle('Início');
   const { me } = useAuth();
   const { data, error, loading, offline, reload } = useFetch<HomeData>('browse/home');
 
