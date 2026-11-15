@@ -192,9 +192,10 @@ export function encryptForDevice(rawKey, data) {
 
 // ---------- TOTP (RFC 6238) ----------
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+/** Segredo novo com 160 bits (32 caracteres base32, como recomenda a RFC 4226). */
 export function newTotpSecret() {
   let out = '';
-  for (const b of crypto.randomBytes(20)) out += B32[b % 32];
+  for (const b of crypto.randomBytes(32)) out += B32[b % 32];
   return out;
 }
 function b32decode(s) {
