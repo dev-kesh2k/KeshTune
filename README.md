@@ -71,3 +71,10 @@ cd frontend && npm install && npm run dev
 ## Limites de requisição
 
 Por usuário (ou por IP sem login): 100 escritas e 600 leituras por minuto, por réplica. Áudio, imagens, downloads offline e o SSE ficam fora. As respostas trazem `RateLimit-Limit`, `RateLimit-Remaining` e `RateLimit-Reset`; acima do limite a API responde `429` com `Retry-After`.
+
+## Estrutura do backend
+
+- `src/server.js`: Express, limites de requisição, SSE, tratamento de erro e boot (migrations → seed → workers).
+- `src/routes/*.js`: uma rota por assunto (auth, catálogo, busca, playlists, biblioteca, reprodução, offline, admin, importação, YouTube, vídeo).
+- `src/security.js`: senhas, tokens JWT, sessões, 2FA e auditoria. `src/util.js`: validação, CSV, limitador e erros.
+- `migrations/*.sql`: aplicadas em ordem no start (`src/migrate.js`).
