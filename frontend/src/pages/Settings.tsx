@@ -14,6 +14,7 @@ import { Confirm, Cover, Field, Sheet, Spinner, Toggle } from '../components/ui'
 import { pagePad } from '../components/Layout';
 import { PasswordForm } from './ChangePassword';
 import { DownloadSettings } from '../components/DownloadSettings';
+import { useTitle } from '../lib/useTitle';
 
 function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -32,6 +33,7 @@ function uaLabel(ua: string | null) {
 }
 
 export default function Settings() {
+  useTitle('Configurações');
   const { me, setMe, logout } = useAuth();
   const toast = useToast();
   const [name, setName] = useState(me?.display_name || '');

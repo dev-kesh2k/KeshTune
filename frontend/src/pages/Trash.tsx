@@ -5,8 +5,10 @@ import { useToast } from '../lib/toast';
 import { useFetch } from '../lib/useFetch';
 import { Empty, ErrorBox, PageLoading } from '../components/ui';
 import { pagePad } from '../components/Layout';
+import { useTitle } from '../lib/useTitle';
 
 export default function Trash() {
+  useTitle('Lixeira');
   const toast = useToast();
   const { data, error, loading, reload } = useFetch<{ items: { id: string; name: string; deleted_at: string; track_count: number }[] }>('playlists/trash');
   const restore = async (id: string) => {
