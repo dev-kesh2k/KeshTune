@@ -55,9 +55,14 @@ api.get('/config', ah(async (_req, res) => {
 // O streaming de áudio, imagens e downloads offline ficam fora do limite.
 const limiterKey = (prefix) => (req) => {
   if (req.path.startsWith('/stream/') || req.path.startsWith('/media/') || req.path.startsWith('/offline/download/') || req.path === '/events') return null;
+  // Token conferido (verify, não decode): com decode qualquer um inventava um "sub" para fugir do limite por IP
+  // ou gastar a cota de outro usuário. Token inválido/vencido conta pelo IP.
   const h = req.get('authorization') || '';
-  const d = h.startsWith('Bearer ') ? jwt.decode(h.slice(7)) : null;
-  return `${prefix}:${d?.sub ? `u:${d.sub}` : `ip:${req.ip}`}`;
+  let sub = null;
+  if (h.startsWith('Bearer ')) {
+    try { sub = jwt.verify(h.slice(7), process.env.JWT_SECRET)?.sub || null; } catch { /* conta pelo IP */ }
+  }
+  return `${prefix}:${sub ? `u:${sub}` : `ip:${req.ip}`}`;
 };
 const writeLimiter = rateLimiter({ windowMs: 60000, max: 100, key: limiterKey('w') });
 const readLimiter = rateLimiter({ windowMs: 60000, max: 600, key: limiterKey('r') });
