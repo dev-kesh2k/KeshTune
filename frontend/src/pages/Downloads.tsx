@@ -7,12 +7,14 @@ import { effectiveState, folderStatus, offlineSupported, removeDownload, useDown
 import { usePlayer } from '../lib/player';
 import { Cover, Empty } from '../components/ui';
 import { pagePad } from '../components/Layout';
+import { useTitle } from '../lib/useTitle';
 
 const LABEL: Record<string, string> = {
   QUEUED: 'Na fila', DOWNLOADING: 'Baixando', READY: 'Baixada', EXPIRING: 'Licença vencendo — conecte-se', EXPIRED: 'Licença vencida', FAILED: 'Falhou', REMOVED: 'Retirada',
 };
 
 export default function Downloads() {
+  useTitle('Downloads');
   const list = useDownloads();
   const player = usePlayer();
   const offline = useOfflineMode();
