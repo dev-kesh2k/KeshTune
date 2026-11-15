@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { usePlayer } from '../lib/player';
 import { onRealtime } from '../lib/realtime';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { Track } from '../lib/types';
 import { CollectionHeader, PlayActions } from '../components/Collection';
 import { TrackList, TrackListHeader } from '../components/TrackList';
@@ -11,6 +12,7 @@ import { Empty, ErrorBox, PageLoading } from '../components/ui';
 import { pagePad } from '../components/Layout';
 
 export default function Liked() {
+  useTitle('Músicas curtidas');
   const { me } = useAuth();
   const player = usePlayer();
   const { data, error, loading, offline, reload } = useFetch<{ items: { track: Track; saved_at: string }[] }>('me/library/tracks?limit=2000');

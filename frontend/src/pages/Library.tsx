@@ -7,6 +7,7 @@ import { useOfflineMode } from '../lib/offline';
 import { onRealtime } from '../lib/realtime';
 import { useToast } from '../lib/toast';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { AlbumCard, ArtistCard, PlaylistCard } from '../lib/types';
 import { Confirm, Cover, Empty, ErrorBox, Field, PageLoading, Sheet, Spinner, Toggle } from '../components/ui';
 import { pagePad } from '../components/Layout';
@@ -119,6 +120,7 @@ function ImportSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
 }
 
 export default function Library() {
+  useTitle('Sua biblioteca');
   const [params, setParams] = useSearchParams();
   const toast = useToast();
   const offline = useOfflineMode();
