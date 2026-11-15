@@ -7,7 +7,7 @@ export function Spinner({ className = '' }: { className?: string }) {
 }
 export function PageLoading() {
   return (
-    <div className="flex min-h-[40dvh] items-center justify-center text-muted">
+    <div className="flex min-h-[40dvh] items-center justify-center text-muted" role="status" aria-live="polite" aria-busy="true">
       <Spinner className="h-8 w-8" />
     </div>
   );
