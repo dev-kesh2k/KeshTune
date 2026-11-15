@@ -75,7 +75,7 @@ export default function Login() {
             </label>
           )}
           {err && <p className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200 ring-1 ring-red-900" role="alert">{err}</p>}
-          <button className="btn-primary w-full" disabled={busy}>
+          <button className="btn-primary w-full" disabled={busy || (needOtp && otp.length !== 6)}>
             {busy && <Spinner className="h-4 w-4" />} Entrar
           </button>
           {needOtp && (
