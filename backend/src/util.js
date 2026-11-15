@@ -69,7 +69,8 @@ export function oneOf(v, name, list, def) {
 }
 export function dateStr(v, name) {
   if (!v) return null;
-  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v))) throw bad(`${name} inválida`);
+  // Confere ida e volta: o Date aceita 2026-02-31 (vira 3 de março) e isso não pode passar
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v)) || new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) !== v) throw bad(`${name} inválida`);
   return v;
 }
 export const isEmail = (v) => typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) && v.length <= 254;
