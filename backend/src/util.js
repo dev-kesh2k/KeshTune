@@ -105,7 +105,9 @@ export function rateLimiter({ windowMs, max, key, code = 'RATE_LIMITED', message
 }
 
 export function csvEscape(v) {
-  const s = v === null || v === undefined ? '' : String(v);
+  let s = v === null || v === undefined ? '' : String(v);
+  // Injeção de fórmula: no Excel/Sheets, célula que começa com = + - @ vira fórmula. Prefixa com apóstrofo.
+  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d/.test(s)) s = `'${s}`;
   return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
