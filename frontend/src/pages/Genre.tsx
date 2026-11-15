@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom';
 import { Radio } from 'lucide-react';
 import { usePlayer } from '../lib/player';
 import { useFetch } from '../lib/useFetch';
+import { useTitle } from '../lib/useTitle';
 import type { AlbumCard, Genre as G, Track } from '../lib/types';
 import { PlayActions } from '../components/Collection';
 import { AlbumTile } from '../components/Tiles';
@@ -12,6 +13,7 @@ import { PageHero, pagePad } from '../components/Layout';
 export default function Genre() {
   const { id } = useParams();
   const { data, error, loading, offline, reload } = useFetch<G & { tracks: Track[]; albums: AlbumCard[] }>(`genres/${id}`, [id]);
+  useTitle(data?.name);
   const player = usePlayer();
   if (loading) return <PageLoading />;
   if (error || !data) return <ErrorBox text={error || 'Não encontrado'} offline={offline} onRetry={() => reload()} />;
