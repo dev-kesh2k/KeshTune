@@ -1,0 +1,22 @@
+name: Testes
+
+# Testes do backend (node:test) em cada push e pull request. O Postgres não é usado: o pool só conecta sob demanda.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Dependências
+        run: npm ci --prefix backend --ignore-scripts --no-audit --no-fund
+      - name: Testes do backend
+        run: node --test backend/test/*.test.js
