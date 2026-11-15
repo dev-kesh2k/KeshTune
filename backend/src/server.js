@@ -139,7 +139,20 @@ const port = Number(process.env.PORT) || 3000;
   startVideoSweeper();
   startVideoWarmup();
   startMixesWarmup();
-  app.listen(port, '0.0.0.0', () => console.log(`KeshTune API em 0.0.0.0:${port} (prefixo ${publicPath || '/'})`));
+  const server = app.listen(port, '0.0.0.0', () => console.log(`KeshTune API em 0.0.0.0:${port} (prefixo ${publicPath || '/'})`));
+  // Desligamento limpo (deploy/restart do container): para de aceitar conexões, espera as que estão
+  // em andamento por até 10 s e fecha o pool do banco.
+  let closing = false;
+  const shutdown = (sig) => {
+    if (closing) return;
+    closing = true;
+    console.log(`[boot] ${sig} recebido, encerrando`);
+    setTimeout(() => process.exit(0), 10000).unref();
+    server.close(() => pool.end().finally(() => process.exit(0)));
+    server.closeIdleConnections?.();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 })().catch((e) => {
   console.error('[boot] falha ao iniciar:', e);
   process.exit(1);
