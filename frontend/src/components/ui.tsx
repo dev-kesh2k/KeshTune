@@ -102,7 +102,7 @@ export function Cover({
   if (url) return <img src={mediaUrl(small ? ytSmall(url) : url)!} alt={alt} loading="lazy" decoding="async" className={`aspect-square bg-surface2 object-cover ${shape} ${className}`} />;
   if (mosaic && mosaic.length >= 4)
     return (
-      <div className={`grid aspect-square grid-cols-2 overflow-hidden bg-surface2 ${shape} ${className}`} aria-label={alt}>
+      <div className={`grid aspect-square grid-cols-2 overflow-hidden bg-surface2 ${shape} ${className}`} role="img" aria-label={alt}>
         {mosaic.slice(0, 4).map((m, i) => (
           <img key={i} src={mediaUrl(ytSmall(m))!} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
         ))}
@@ -111,7 +111,7 @@ export function Cover({
   if (mosaic && mosaic.length)
     return <img src={mediaUrl(small ? ytSmall(mosaic[0]) : mosaic[0])!} alt={alt} loading="lazy" decoding="async" className={`aspect-square bg-surface2 object-cover ${shape} ${className}`} />;
   return (
-    <div className={`flex aspect-square items-center justify-center bg-gradient-to-br from-surface2 to-line text-muted ${shape} ${className}`} aria-label={alt}>
+    <div className={`flex aspect-square items-center justify-center bg-gradient-to-br from-surface2 to-line text-muted ${shape} ${className}`} role="img" aria-label={alt}>
       {icon || <Music2 className="h-1/3 w-1/3" />}
     </div>
   );
