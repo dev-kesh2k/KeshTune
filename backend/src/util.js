@@ -97,6 +97,10 @@ export function rateLimiter({ windowMs, max, key, code = 'RATE_LIMITED', message
       hits.set(k, h);
     }
     h.n += 1;
+    // Cabeçalhos padrão (draft IETF RateLimit): o app pode saber quanto falta antes de levar 429
+    res.set('RateLimit-Limit', String(max));
+    res.set('RateLimit-Remaining', String(Math.max(0, max - h.n)));
+    res.set('RateLimit-Reset', String(Math.ceil((h.reset - now) / 1000)));
     if (h.n > max) {
       res.set('Retry-After', String(Math.ceil((h.reset - now) / 1000)));
       return next(new HttpError(429, code, message));
