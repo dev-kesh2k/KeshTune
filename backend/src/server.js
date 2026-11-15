@@ -42,11 +42,17 @@ api.use(compression({
 }));
 api.use(express.json({ limit: '1mb' }));
 
-api.get('/health', ah(async (_req, res) => {
-  await pool.query('SELECT 1');
+// 503 (db: erro) quando o Postgres não responde: o Hub mostra "banco fora do ar" no Monitoramento e avisa.
+api.get('/health', async (_req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json({ ok: true, service: 'keshtune', time: new Date().toISOString(), uptime_s: Math.round(process.uptime()) });
-}));
+  const started = Date.now();
+  try {
+    await Promise.race([pool.query('SELECT 1'), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))]);
+    res.json({ ok: true, db: 'ok', dbMs: Date.now() - started, service: 'keshtune', time: new Date().toISOString(), uptime_s: Math.round(process.uptime()) });
+  } catch {
+    res.status(503).json({ ok: false, db: 'erro', service: 'keshtune' });
+  }
+});
 
 // Configuração pública mínima para o app
 api.get('/config', ah(async (_req, res) => {
