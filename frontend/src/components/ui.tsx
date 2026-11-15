@@ -78,7 +78,7 @@ export function Confirm({
     <Sheet open={open} onClose={onClose} title={title}>
       {text && <div className="mb-5 text-sm text-muted">{text}</div>}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <button className="btn-secondary" onClick={onClose}>
+        <button className="btn-secondary" disabled={busy} onClick={onClose}>
           Cancelar
         </button>
         <button className={danger ? 'btn-danger' : 'btn-primary'} disabled={busy} onClick={onConfirm}>
