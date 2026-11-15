@@ -121,6 +121,9 @@ app.use('/api', api);
 app.use('/v1', api);
 app.use(api); // proxy do Hub já tira /<slug>/api
 
+// Promessa rejeitada sem catch: registra no log em vez de passar em silêncio
+process.on('unhandledRejection', (e) => console.error('[processo] promessa rejeitada sem tratamento:', e));
+
 const port = Number(process.env.PORT) || 3000;
 (async () => {
   for (let i = 1; ; i++) {
