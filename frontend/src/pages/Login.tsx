@@ -43,7 +43,7 @@ export default function Login() {
             <>
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium">E-mail</span>
-                <input className="input" type="email" inputMode="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <input className="input" type="email" inputMode="email" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} />
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium">Senha</span>
