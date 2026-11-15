@@ -3,11 +3,13 @@ import { useFetch } from '../lib/useFetch';
 import { ErrorBox, PageLoading, Section, Shelf, Spinner } from '../components/ui';
 import { MixTile, type MixCard } from '../components/Tiles';
 import { pagePad } from '../components/Layout';
+import { useTitle } from '../lib/useTitle';
 
 type Mixes = { sections: { title: string; items: MixCard[] }[]; pending?: boolean };
 
 /** Playlists do YouTube Music e mixes do YouTube (Seus mixes, artistas em alta), como na aba Mixes do app. */
 export default function Mixes() {
+  useTitle('Mixes');
   const { data, error, loading, offline, reload } = useFetch<Mixes>('youtube/mixes');
   // Servidor recém-ligado ainda montando as playlists do YouTube Music: pede de novo daqui a pouco
   const [tries, setTries] = useState(0);
