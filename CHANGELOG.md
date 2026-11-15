@@ -4,6 +4,8 @@ Mudanças relevantes do app, da mais nova para a mais antiga. Cada item é um pu
 
 ## 2026-11-15
 
+- **Saúde:** `/api/health` responde 503 (`db: erro`) quando o Postgres não responde; o Hub mostra e avisa "banco fora do ar"
+- **CI:** lint no-undef do backend (pega import esquecido)
 - Segurança: compression atualizado no backend (npm audit) (#79)
 - CI: roda os testes do backend no GitHub Actions (#78)
 - Testes: limite de requisições por chave (#77)
