@@ -4,6 +4,8 @@ Mudanças relevantes do app, da mais nova para a mais antiga. Cada item é um pu
 
 ## 2026-11-15
 
+- **Segurança:** sharp 0.35.5 (falhas em libvips, libheif e librsvg ao processar capas enviadas) (#95)
+- **Código:** regras de links e textos de mídia (YouTube, Spotify, busca, mistura de listas) num módulo só, `media-links.js`, com testes; as rotas de vídeo, YouTube, admin, importação e busca deixaram de ter cópias (#96–#102)
 - **Saúde:** `/api/health` responde 503 (`db: erro`) quando o Postgres não responde; o Hub mostra e avisa "banco fora do ar"
 - **CI:** lint no-undef do backend (pega import esquecido)
 - Segurança: compression atualizado no backend (npm audit) (#79)
