@@ -13,6 +13,7 @@ import {
 } from '../util.js';
 import { restrictUser } from './auth.js';
 import { AUDIO_DIR, isImageRef, saveImage, TMP_DIR } from './media.js';
+import { youtubeId } from '../media-links.js';
 
 export const adminRouter = express.Router();
 adminRouter.use('/admin', auth(), adminOnly);
@@ -284,13 +285,6 @@ adminRouter.post('/admin/uploads/audio', audioUpload.single('file'), ah2(async (
   if (!req.file) throw bad('Envie o arquivo de áudio no campo "file"');
   res.status(201).json(await probeAudio(req.file));
 }));
-
-function youtubeId(url) {
-  const s = String(url || '').trim();
-  if (/^[\w-]{11}$/.test(s)) return s;
-  const m = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/|music\.youtube\.com\/watch\?(?:.*&)?v=)([\w-]{11})/);
-  return m ? m[1] : null;
-}
 
 adminRouter.post('/admin/youtube/lookup', ah2(async (req, res) => {
   const vid = youtubeId(req.body?.url);
