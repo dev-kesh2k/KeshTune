@@ -7,6 +7,7 @@ import { adminOnly, audit, auth } from '../security.js';
 import { ah, bad, HttpError, notFound, sha256, uuidParam, uuidv7 } from '../util.js';
 import { createTrack, MIME_EXT, probeAudio } from './admin.js';
 import { AUDIO_DIR, TMP_DIR } from './media.js';
+import { spotifyUrl } from '../media-links.js';
 
 // Importação pelo spotDL (https://github.com/spotDL/spotify-downloader): o admin cola um link do Spotify,
 // o spotDL baixa os MP3 já com tags (capa, ISRC, álbum, letra) e cada arquivo entra no catálogo como faixa 'file'.
@@ -41,14 +42,6 @@ export function detect(kind = 'spotify', force = false) {
       resolve(result);
     });
   });
-}
-
-/** Aceita links open.spotify.com (faixa, álbum, playlist, artista) e URIs spotify:tipo:id; devolve o link canônico. */
-function spotifyUrl(v) {
-  const s = String(v || '').trim();
-  const m = s.match(/^https?:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}(?:-[a-z]{2})?\/)?(track|album|playlist|artist)\/([A-Za-z0-9]{22})(?:[/?#].*)?$/)
-    || s.match(/^spotify:(track|album|playlist|artist):([A-Za-z0-9]{22})$/);
-  return m ? `https://open.spotify.com/${m[1]}/${m[2]}` : null;
 }
 
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r(?!\n)/g, '\n');
