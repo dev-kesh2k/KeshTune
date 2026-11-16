@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { auth } from '../security.js';
 import { ah, bad, isUuid, oneOf, str } from '../util.js';
 import { ARTIST_JSON, hydrateTracks, playlistCards } from '../views.js';
+import { normalizeSearch } from '../media-links.js';
 
 export const searchRouter = express.Router();
 searchRouter.use('/search', auth());
@@ -17,12 +18,8 @@ const scoreSql = (col) => `(CASE WHEN f_norm(${col}) LIKE $2 THEN 2 WHEN f_norm(
 // Os limites (0,45 e 0,3) são definidos em cada conexão (db.js).
 const matchSql = (col) => `(f_norm(${col}) LIKE $3 OR $1 <% f_norm(${col}) OR f_norm(${col}) % $1)`;
 
-function normalize(s) {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-}
-
 async function runSearch(user, raw, types, limit) {
-  const nq = normalize(raw);
+  const nq = normalizeSearch(raw);
   const p = [nq, `${esc(nq)}%`, `%${esc(nq)}%`];
   // Cada tipo é uma consulta independente: rodam em paralelo (só os pedidos), e a resposta sai
   // no tempo da mais lenta em vez da soma de todas.
@@ -79,7 +76,7 @@ searchRouter.get('/search', ah(async (req, res) => {
   if (total < 3 && raw.length >= 3 && req.query.dym !== '0') {
     // Só sugere quando o termo não aparece em nada do catálogo (o filtro escolhido pode só não ter resultado).
     // Candidatos pelo operador % (índice de trigramas) em vez de calcular a similaridade com tudo.
-    const nq = normalize(raw);
+    const nq = normalizeSearch(raw);
     const best = await q(
       `SELECT name FROM (
          (SELECT title AS name, similarity(f_norm(title), $1) AS sim FROM tracks WHERE status = 'active' AND f_norm(title) % $1 ORDER BY sim DESC LIMIT 1)
