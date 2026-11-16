@@ -11,6 +11,7 @@ import { q as dbq } from '../db.js';
 import { auth, signStream, verifyStream } from '../security.js';
 import { ah, bad, notFound, str } from '../util.js';
 import { YTDLP_JS } from './imports.js';
+import { decodeEntities, interleave, isoDuration } from '../media-links.js';
 import { UPLOAD_ROOT } from './media.js';
 import { chunkRange, parseRange, sendChunks } from './youtube.js';
 
@@ -28,11 +29,6 @@ const ytId = (v) => {
   return id;
 };
 const quality = (v) => (QUALITIES.includes(Number(v)) ? Number(v) : 720);
-const decode = (s) => String(s || '').replace(/&(amp|quot|#39|lt|gt);/g, (_m, e) => ({ amp: '&', quot: '"', '#39': "'", lt: '<', gt: '>' })[e]);
-const isoDuration = (v) => {
-  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(v || '');
-  return m ? ((+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0)) * 1000 : 0;
-};
 
 // ---------- Catálogo (YouTube Data API, com cache para poupar a cota) ----------
 
@@ -74,8 +70,8 @@ async function api(pathname, params) {
 
 const fromVideo = (v) => ({
   youtube_id: v.id,
-  title: decode(v.snippet?.title),
-  channel: decode(v.snippet?.channelTitle),
+  title: decodeEntities(v.snippet?.title),
+  channel: decodeEntities(v.snippet?.channelTitle),
   duration_ms: isoDuration(v.contentDetails?.duration),
   views: Number(v.statistics?.viewCount || 0),
   published_at: v.snippet?.publishedAt || null,
@@ -138,19 +134,6 @@ const CATEGORIES = {
   ciencia: ['curiosidades ciência', 'documentário português'],
 };
 const LABELS = { 'para-voce': 'Para você', musica: 'Música', futebol: 'Futebol', noticias: 'Notícias', humor: 'Humor', games: 'Games', carros: 'Carros', ciencia: 'Ciência' };
-
-/** Junta várias listas alternando os itens (um de cada), sem repetir vídeo. */
-function interleave(lists, max = 40) {
-  const out = [];
-  const seen = new Set();
-  for (let i = 0; out.length < max && lists.some((l) => i < l.length); i++) {
-    for (const l of lists) {
-      const v = l[i];
-      if (v && !seen.has(v.youtube_id) && !v.live) { seen.add(v.youtube_id); out.push(v); }
-    }
-  }
-  return out.slice(0, max);
-}
 
 async function topArtists(userId) {
   const r = await dbq(
