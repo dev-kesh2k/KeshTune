@@ -12,6 +12,7 @@ import { createTrack, findOrCreateArtist } from './admin.js';
 import { AUDIO_DIR, saveImage } from './media.js';
 import { detect, enqueueJob, YTDLP_JS } from './imports.js';
 import { addToMyMusic, createPlaylistWithTracks } from './playlists.js';
+import { decodeEntities, isoDuration } from '../media-links.js';
 
 // Busca no YouTube para qualquer usuário: pela YouTube Data API quando há YOUTUBE_API_KEY (cota de ~100 buscas/dia
 // no plano gratuito) e pelo yt-dlp quando não há chave ou a cota acabou. Tocar ou adicionar um resultado cadastra a
@@ -24,11 +25,6 @@ const known = new Map(); // youtube_id -> metadados vistos na busca (para cadast
 const inflight = new Map(); // busca normalizada -> promise (a mesma busca repetida espera a primeira, sem rodar outra)
 
 const thumb = (id) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
-const decode = (s) => String(s || '').replace(/&(amp|quot|#39|lt|gt);/g, (_m, e) => ({ amp: '&', quot: '"', '#39': "'", lt: '<', gt: '>' })[e]);
-const isoDuration = (v) => {
-  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(v || '');
-  return m ? ((+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0)) * 1000 : 0;
-};
 
 async function searchApi(text, n = 12) {
   const found = [];
@@ -51,7 +47,7 @@ async function searchApi(text, n = 12) {
     if (v.ok) for (const x of (await v.json()).items || []) durations[x.id] = isoDuration(x.contentDetails?.duration);
   }
   return found.filter((i) => i.id?.videoId).map((i) => ({
-    youtube_id: i.id.videoId, title: decode(i.snippet.title), channel: decode(i.snippet.channelTitle), duration_ms: durations[i.id.videoId] || 0,
+    youtube_id: i.id.videoId, title: decodeEntities(i.snippet.title), channel: decodeEntities(i.snippet.channelTitle), duration_ms: durations[i.id.videoId] || 0,
   }));
 }
 
@@ -133,7 +129,7 @@ async function searchPlaylists(text) {
   if (!items && API_KEY) {
     const j = await apiGet('search', { part: 'snippet', type: 'playlist', maxResults: '12', regionCode: 'BR', q: text });
     items = (j.items || []).map((i) => ({
-      playlist_id: i.id.playlistId, title: decode(i.snippet.title), channel: decode(i.snippet.channelTitle), thumbnail_url: i.snippet.thumbnails?.high?.url || null,
+      playlist_id: i.id.playlistId, title: decodeEntities(i.snippet.title), channel: decodeEntities(i.snippet.channelTitle), thumbnail_url: i.snippet.thumbnails?.high?.url || null,
     }));
   }
   if (!items) throw bad('Busca de playlists no YouTube indisponível agora', 'YOUTUBE_UNAVAILABLE');
@@ -159,11 +155,11 @@ async function readPlaylist(listId) {
     const j = await apiGet('playlistItems', { part: 'snippet', playlistId: listId, maxResults: '50', pageToken });
     for (const i of j.items || []) {
       const vid = i.snippet?.resourceId?.videoId;
-      if (vid) videos.push({ youtube_id: vid, title: decode(i.snippet.title), channel: decode(i.snippet.videoOwnerChannelTitle || ''), duration_ms: 0 });
+      if (vid) videos.push({ youtube_id: vid, title: decodeEntities(i.snippet.title), channel: decodeEntities(i.snippet.videoOwnerChannelTitle || ''), duration_ms: 0 });
     }
     pageToken = j.nextPageToken;
   } while (pageToken && videos.length < 500);
-  return { title: decode(info.snippet.title), channel: decode(info.snippet.channelTitle), videos: videos.filter((v) => !/^(private|deleted) video$/i.test(v.title)) };
+  return { title: decodeEntities(info.snippet.title), channel: decodeEntities(info.snippet.channelTitle), videos: videos.filter((v) => !/^(private|deleted) video$/i.test(v.title)) };
 }
 
 // Coletâneas, mixes e vídeos longos não são "uma música"
