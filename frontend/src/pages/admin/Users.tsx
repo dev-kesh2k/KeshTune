@@ -109,7 +109,7 @@ function CreateUser({ open, onClose }: { open: boolean; onClose: () => void }) {
               <option value="user">Ouvinte</option><option value="admin">Administrador</option>
             </select>
           </Field>
-          <button className="btn-primary w-full" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Criar usuário e gerar senha</button>
+          <button type="submit" className="btn-primary w-full" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Criar usuário e gerar senha</button>
         </form>
       )}
     </Sheet>
@@ -144,7 +144,7 @@ function ImportUsers({ open, onClose }: { open: boolean; onClose: () => void }) 
           <p className="text-sm text-muted">Uma conta por linha: <span className="font-mono">nome,email</span>. Até 500 por vez.</p>
           <input type="file" accept=".csv,text/csv,.txt" className="input py-2.5" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setCsv(await f.text()); }} aria-label="Arquivo CSV" />
           <textarea className="input min-h-40 py-3 font-mono text-sm" placeholder={'Maria Silva,maria@exemplo.com\nJoão Souza,joao@exemplo.com'} value={csv} onChange={(e) => setCsv(e.target.value)} aria-label="Conteúdo CSV" />
-          <button className="btn-primary w-full" disabled={busy || !csv.trim()}>{busy && <Spinner className="h-4 w-4" />} Criar contas</button>
+          <button type="submit" className="btn-primary w-full" disabled={busy || !csv.trim()}>{busy && <Spinner className="h-4 w-4" />} Criar contas</button>
         </form>
       )}
     </Sheet>
@@ -167,7 +167,7 @@ function UserSheet({ id, onClose, onError }: { id: string; onClose: () => void; 
       {loading || !data || !form ? <PageLoading /> : (
         <div className="space-y-5 pt-2">
           {temp && <TempPassword email={temp.email} password={temp.temp_password} />}
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); act(async () => setData({ ...data, ...(await api(`admin/users/${id}`, { method: 'PATCH', body: form })) }), 'Conta atualizada'); }}>
+          <form className="grid gap-3 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); void act(async () => setData({ ...data, ...(await api(`admin/users/${id}`, { method: 'PATCH', body: form })) }), 'Conta atualizada'); }}>
             <Field label="Nome"><input className="input" required value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></Field>
             <Field label="E-mail"><input className="input" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
             <Field label="Perfil">
@@ -175,7 +175,7 @@ function UserSheet({ id, onClose, onError }: { id: string; onClose: () => void; 
                 <option value="user">Ouvinte</option><option value="admin">Administrador</option>
               </select>
             </Field>
-            <div className="flex items-end"><button className="btn-primary w-full">Salvar</button></div>
+            <div className="flex items-end"><button type="submit" className="btn-primary w-full">Salvar</button></div>
           </form>
           <div className="grid grid-cols-3 gap-2 text-center text-sm">
             <div className="card p-2"><p className="text-lg font-bold">{data.usage.playlists}</p><p className="text-xs text-muted">playlists</p></div>

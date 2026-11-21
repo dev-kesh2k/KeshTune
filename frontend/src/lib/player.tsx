@@ -166,7 +166,7 @@ export function PlayerProvider({ children, onError }: { children: ReactNode; onE
       track_id: track.id, event, ms_played: ms, context_type: ctx?.type, context_id: ctx?.id,
       played_at: new Date().toISOString(), offline: isOfflineMode(),
     });
-    flushPending();
+    void flushPending();
   }, []);
 
   const tick = useCallback((isPlaying: boolean) => {

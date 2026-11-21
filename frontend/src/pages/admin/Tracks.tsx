@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2, FileAudio, ImagePlus, Pencil, Plus, RotateCcw, Trash2, Upload, XCircle, Youtube, Ban } from 'lucide-react';
 import { api, API, ApiError, errText, getTokens } from '../../lib/api';
 import { fmtBytes, fmtTime } from '../../lib/format';
+import { stripVideoTags } from '../../lib/text';
 import { uploadSquareImage } from '../../lib/image';
 import { useToast } from '../../lib/toast';
 import { useFetch } from '../../lib/useFetch';
@@ -106,7 +107,7 @@ export default function Tracks() {
         <form className="space-y-4 pt-2" onSubmit={async (e) => { e.preventDefault(); try { await api(`admin/takedown/${takedown!.id}`, { method: 'PATCH', body: { takedown: true, reason } }); toast('Faixa retirada; downloads serão apagados na próxima sincronização', 'ok'); setTakedown(null); reload(true); } catch (err) { toast(errText(err), 'error'); } }}>
           <p className="text-sm text-muted">"{takedown?.title}" deixa de tocar para todos e some das buscas. Use para notificações de direitos autorais (prazo de 24 h).</p>
           <Field label="Motivo"><textarea className="input min-h-24 py-3" required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex.: notificação de direitos autorais recebida em 01/11" /></Field>
-          <button className="btn-danger w-full">Retirar</button>
+          <button type="submit" className="btn-danger w-full">Retirar</button>
         </form>
       </Sheet>
       <Confirm open={!!del} title={`Excluir "${del?.title}"?`} text="Apaga a faixa, o arquivo de áudio e as contagens de reprodução. Para só tirar do ar, use Retirar." confirmLabel="Excluir" danger onClose={() => setDel(null)}
@@ -190,7 +191,7 @@ function TrackForm({ track, onClose }: { track?: AT; onClose: (saved: boolean) =
       const r = await api<{ youtube_id: string; title: string; author_name: string; thumbnail_url: string }>('admin/youtube/lookup', { body: { url: yt } });
       setYtId(r.youtube_id);
       const parts = r.title.split(' - ');
-      setF((x) => ({ ...x, title: x.title || (parts.length > 1 ? parts.slice(1).join(' - ') : r.title).replace(/\s*[([](official|clipe|video|vídeo|audio|áudio|lyric)[^)\]]*[)\]]/gi, '').trim(), artists: x.artists || (parts.length > 1 ? parts[0] : r.author_name) }));
+      setF((x) => ({ ...x, title: x.title || stripVideoTags(parts.length > 1 ? parts.slice(1).join(' - ') : r.title).trim(), artists: x.artists || (parts.length > 1 ? parts[0] : r.author_name) }));
       if (!cover) setCover(r.thumbnail_url);
     } catch (e) {
       toast(errText(e), 'error');
@@ -303,7 +304,7 @@ function TrackForm({ track, onClose }: { track?: AT; onClose: (saved: boolean) =
         <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium">Conteúdo explícito</span><Toggle checked={f.explicit} onChange={(v) => set('explicit', v)} label="Explícito" /></div>
         <Field label="Gêneros e humores"><GenrePicker value={genres} onChange={setGenres} /></Field>
         <Field label="Letra" hint="Texto simples ou LRC sincronizado: [00:12.50] primeira linha"><textarea className="input min-h-32 py-3 font-mono text-sm" value={f.lyrics} onChange={(e) => set('lyrics', e.target.value)} /></Field>
-        <button className="btn-primary w-full" disabled={busy || progress !== null}>{busy && <Spinner className="h-4 w-4" />} {editing ? 'Salvar alterações' : 'Adicionar ao catálogo'}</button>
+        <button type="submit" className="btn-primary w-full" disabled={busy || progress !== null}>{busy && <Spinner className="h-4 w-4" />} {editing ? 'Salvar alterações' : 'Adicionar ao catálogo'}</button>
       </form>
     </Sheet>
   );

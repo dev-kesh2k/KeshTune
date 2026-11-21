@@ -117,7 +117,7 @@ export default function Settings() {
             </div>
             <Field label="Nome"><input className="input" required minLength={2} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Bio"><textarea className="input min-h-20 py-3" maxLength={300} value={bio} onChange={(e) => setBio(e.target.value)} /></Field>
-            <button className="btn-primary" disabled={saving}>{saving && <Spinner className="h-4 w-4" />} Salvar perfil</button>
+            <button type="submit" className="btn-primary" disabled={saving}>{saving && <Spinner className="h-4 w-4" />} Salvar perfil</button>
           </form>
         </Card>
 
@@ -217,7 +217,7 @@ export default function Settings() {
             <img src={totp.qr} alt="QR do autenticador" className="mx-auto w-[min(60vw,13rem)] rounded-xl bg-white p-2" />
             <p className="break-all text-xs text-muted">Ou digite a chave: <span className="font-mono text-white">{totp.secret}</span></p>
             <input className="input text-center text-2xl tracking-[0.4em]" inputMode="numeric" autoComplete="one-time-code" maxLength={6} required value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} aria-label="Código de 6 dígitos" />
-            <button className="btn-primary w-full" disabled={otp.length !== 6}>Confirmar e ativar</button>
+            <button type="submit" className="btn-primary w-full" disabled={otp.length !== 6}>Confirmar e ativar</button>
           </form>
         )}
       </Sheet>
@@ -238,7 +238,7 @@ export default function Settings() {
           }}
         >
           <Field label="Confirme sua senha"><input className="input" type="password" autoComplete="current-password" required value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
-          <button className="btn-danger w-full">Desativar</button>
+          <button type="submit" className="btn-danger w-full">Desativar</button>
         </form>
       </Sheet>
       <Confirm open={clearHist} title="Apagar histórico?" text="Apaga o histórico de reprodução e de buscas. As recomendações recomeçam do zero." confirmLabel="Apagar" danger onClose={() => setClearHist(false)}
@@ -259,7 +259,7 @@ export default function Settings() {
         >
           <p className="text-sm text-muted">Sua conta, playlists e downloads deixam de funcionar imediatamente; os dados pessoais são apagados em até 30 dias.</p>
           <Field label="Confirme sua senha"><input className="input" type="password" autoComplete="current-password" required value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
-          <button className="btn-danger w-full">Excluir definitivamente</button>
+          <button type="submit" className="btn-danger w-full">Excluir definitivamente</button>
         </form>
       </Sheet>
     </div>

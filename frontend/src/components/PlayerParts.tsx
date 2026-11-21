@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { artistNames, fmtTime } from '../lib/format';
+import { stripBrackets } from '../lib/text';
 import { usePlayer, usePlayerPosition, type QItem } from '../lib/player';
 import { DownloadButton, useUi } from './TrackActions';
 import { Explicit } from './TrackList';
@@ -445,7 +446,7 @@ function parseLrc(text: string): Line[] | null {
   for (const raw of text.split(/\r?\n/)) {
     const tags = [...raw.matchAll(/\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g)];
     if (!tags.length) continue;
-    const content = raw.replace(/\[[^\]]*\]/g, '').trim();
+    const content = stripBrackets(raw).trim();
     for (const m of tags) out.push({ t: (+m[1] * 60 + +m[2]) * 1000 + (m[3] ? +m[3].padEnd(3, '0') : 0), text: content });
   }
   return out.length ? out.sort((a, b) => a.t - b.t) : null;

@@ -3,6 +3,7 @@ import { Eye, EyeOff, Lock } from 'lucide-react';
 import { ApiError, errText } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Spinner } from '../components/ui';
+import { focusOnMount } from '../lib/focus';
 
 export default function Login() {
   const { login } = useAuth();
@@ -66,7 +67,7 @@ export default function Login() {
                 autoComplete="one-time-code"
                 pattern="\d{6}"
                 maxLength={6}
-                autoFocus
+                ref={focusOnMount}
                 required
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
@@ -75,7 +76,7 @@ export default function Login() {
             </label>
           )}
           {err && <p className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200 ring-1 ring-red-900" role="alert">{err}</p>}
-          <button className="btn-primary w-full" disabled={busy || (needOtp && otp.length !== 6)}>
+          <button type="submit" className="btn-primary w-full" disabled={busy || (needOtp && otp.length !== 6)}>
             {busy && <Spinner className="h-4 w-4" />} Entrar
           </button>
           {needOtp && (

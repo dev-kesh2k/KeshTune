@@ -21,7 +21,7 @@ export function DownloadSettings() {
 
   const refreshFolder = () => folderStatus().then(setFolder).catch(() => {});
   useEffect(() => {
-    refreshFolder();
+    void refreshFolder();
     api('config').then(setCfg).catch(() => {});
   }, []);
 
@@ -33,7 +33,7 @@ export function DownloadSettings() {
     try {
       const name = await chooseFolder();
       toast(`Downloads serão gravados em "${name}"`, 'ok');
-      refreshFolder();
+      void refreshFolder();
     } catch (e) {
       if ((e as Error).name !== 'AbortError') toast((e as Error).message, 'error');
     }

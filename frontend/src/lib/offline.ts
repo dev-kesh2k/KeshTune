@@ -155,7 +155,7 @@ export async function downloadTracks(tracks: Track[]) {
     }
   }
   emitChange();
-  pump();
+  void pump();
   return queued;
 }
 
@@ -168,9 +168,9 @@ async function pump() {
     next.progress = 0;
     await dlPut(next);
     emitChange();
-    fetchOne(next).finally(() => {
+    void fetchOne(next).finally(() => {
       running--;
-      pump();
+      void pump();
     });
   }
 }
@@ -220,7 +220,7 @@ async function fetchOne(rec: DlRecord) {
     if (rec.attempts < 3) await new Promise((r) => setTimeout(r, 2000 * rec.attempts));
   }
   emitChange();
-  writeIndex();
+  void writeIndex();
 }
 
 export async function retryFailed() {
@@ -232,7 +232,7 @@ export async function retryFailed() {
     }
   }
   emitChange();
-  pump();
+  void pump();
 }
 
 export async function removeDownload(trackId: string) {
@@ -242,7 +242,7 @@ export async function removeDownload(trackId: string) {
   }
   await dlDel(trackId);
   emitChange();
-  writeIndex();
+  void writeIndex();
 }
 export async function removeAllDownloads() {
   for (const r of await dlAll<DlRecord>()) await removeDownload(r.track_id);
@@ -294,11 +294,11 @@ export async function syncOffline(events: unknown[] = []) {
   }
   if (res.device_revoked) await kvDel('deviceId');
   emitChange();
-  writeIndex();
+  void writeIndex();
   // retoma downloads interrompidos (app fechado ou queda de rede)
   if (all.some((r) => r.state === 'QUEUED' || r.state === 'DOWNLOADING')) {
     for (const r of await dlAll<DlRecord>()) if (r.state === 'DOWNLOADING') { r.state = 'QUEUED'; await dlPut(r); }
-    pump();
+    void pump();
   }
   return res;
 }
@@ -313,7 +313,7 @@ export function useDownloads() {
   useEffect(() => {
     let alive = true;
     const load = () => dlAll<DlRecord>().then((l) => alive && setList(l)).catch(() => {});
-    load();
+    void load();
     window.addEventListener('spx:downloads', load);
     return () => {
       alive = false;

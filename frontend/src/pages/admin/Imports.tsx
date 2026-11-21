@@ -70,7 +70,7 @@ export default function Imports() {
           <Field label="Links do Spotify" hint={`Um por linha · spotDL ${st.data.version}`}>
             <textarea className="input min-h-24 w-full" value={links} onChange={(e) => setLinks(e.target.value)} placeholder="https://open.spotify.com/album/..." />
           </Field>
-          <button className="btn-primary" disabled={busy || !links.trim()}>
+          <button type="submit" className="btn-primary" disabled={busy || !links.trim()}>
             {busy ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />} Importar
           </button>
         </form>

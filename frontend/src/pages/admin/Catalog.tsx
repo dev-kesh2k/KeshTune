@@ -98,7 +98,7 @@ export function Artists() {
               <Field label="País (sigla)"><input className="input uppercase" maxLength={2} value={edit.country || ''} onChange={(e) => setEdit({ ...edit, country: e.target.value })} placeholder="BR" /></Field>
               <Field label="Biografia"><textarea className="input min-h-28 py-3" maxLength={5000} value={edit.bio || ''} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} /></Field>
               <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium">Verificado</span><Toggle checked={!!edit.verified} onChange={(v) => setEdit({ ...edit, verified: v })} label="Verificado" /></div>
-              <button className="btn-primary w-full" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
+              <button type="submit" className="btn-primary w-full" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
             </div>
           </form>
         )}
@@ -170,7 +170,7 @@ export function Albums() {
               <Field label="Lançamento"><input className="input" type="date" value={edit.release_date || ''} onChange={(e) => setEdit({ ...edit, release_date: e.target.value })} /></Field>
               <Field label="Gravadora"><input className="input" value={edit.label || ''} onChange={(e) => setEdit({ ...edit, label: e.target.value })} /></Field>
               <Field label="UPC"><input className="input" inputMode="numeric" value={edit.upc || ''} onChange={(e) => setEdit({ ...edit, upc: e.target.value.replace(/\D/g, '') })} /></Field>
-              <button className="btn-primary w-full sm:col-span-2" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
+              <button type="submit" className="btn-primary w-full sm:col-span-2" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
             </div>
           </form>
         )}
@@ -249,7 +249,7 @@ export function Genres() {
           <form onSubmit={save} className="space-y-4 pt-2">
             <Field label="Nome"><input className="input" required maxLength={60} value={edit.name || ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label="Cor"><input className="input h-12 p-1" type="color" value={edit.color || '#7c5cff'} onChange={(e) => setEdit({ ...edit, color: e.target.value })} /></Field>
-            <button className="btn-primary w-full">Salvar</button>
+            <button type="submit" className="btn-primary w-full">Salvar</button>
           </form>
         )}
       </Sheet>

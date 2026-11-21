@@ -128,7 +128,7 @@ export function AdminSettings() {
         <Field label="Validade da licença (dias)"><input className="input" type="number" min={1} max={3650} value={data.offline_license_days} onChange={(e) => setData({ ...data, offline_license_days: Number(e.target.value) })} /></Field>
       </div>
       <p className="text-xs text-muted">Sem anúncios e sem limite de pulos para todas as contas.</p>
-      <button className="btn-primary" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
+      <button type="submit" className="btn-primary" disabled={busy}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
     </form>
   );
 }
@@ -159,8 +159,8 @@ export function Audit() {
       setNext(r.next_before);
     } catch (e) { setErr(errText(e)); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
-  if (err) return <ErrorBox text={err} onRetry={() => { setErr(null); load(); }} />;
+  useEffect(() => { void load(); }, []);
+  if (err) return <ErrorBox text={err} onRetry={() => { setErr(null); void load(); }} />;
   return (
     <div className="pb-6">
       {!items.length && loading ? <PageLoading /> : !items.length ? <Empty title="Nenhum registro" /> : (
