@@ -135,7 +135,7 @@ export default function Search() {
           <ul className="absolute inset-x-0 top-full mt-2 overflow-hidden rounded-2xl bg-surface2 py-1 shadow-2xl ring-1 ring-line">
             {sugs.map((s) => (
               <li key={`${s.type}-${s.id}`}>
-                <button className="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-white/[0.06]" onMouseDown={(e) => e.preventDefault()} onClick={() => openItem(s.type, s.id)}>
+                <button type="button" className="flex min-h-12 w-full items-center gap-3 px-3 py-1.5 text-left hover:bg-white/[0.06]" onMouseDown={(e) => e.preventDefault()} onClick={() => openItem(s.type, s.id)}>
                   <Cover url={s.image_url} alt="" round={s.type === 'artist'} className="h-10 w-10 shrink-0" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{s.title}</span>

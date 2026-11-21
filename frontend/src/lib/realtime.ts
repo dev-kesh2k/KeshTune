@@ -28,9 +28,9 @@ export function startRealtime() {
       if (!stopped) timer = window.setTimeout(connect, 10000);
     }
   };
-  connect();
+  void connect();
   const online = () => {
-    if (!es) connect();
+    if (!es) void connect();
   };
   window.addEventListener('online', online);
   return () => {

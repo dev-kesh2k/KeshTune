@@ -36,7 +36,7 @@ export function PasswordForm({ onDone, forced }: { onDone: () => void; forced?: 
         <input className="input" type="password" autoComplete="new-password" required minLength={8} value={pw2} onChange={(e) => setPw2(e.target.value)} />
       </Field>
       {err && <p className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200 ring-1 ring-red-900" role="alert">{err}</p>}
-      <button className="btn-primary w-full" disabled={busy}>
+      <button type="submit" className="btn-primary w-full" disabled={busy}>
         {busy && <Spinner className="h-4 w-4" />} Salvar nova senha
       </button>
     </form>

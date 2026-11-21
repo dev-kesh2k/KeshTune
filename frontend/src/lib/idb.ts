@@ -11,7 +11,7 @@ function db() {
         if (!d.objectStoreNames.contains('downloads')) d.createObjectStore('downloads', { keyPath: 'track_id' });
       };
       r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
+      r.onerror = () => reject(r.error ?? new Error('Não foi possível abrir o banco local'));
     });
   }
   return dbp;
@@ -23,7 +23,7 @@ function run<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore)
         const tx = d.transaction(store, mode);
         const req = fn(tx.objectStore(store));
         req.onsuccess = () => resolve(req.result as T);
-        req.onerror = () => reject(req.error);
+        req.onerror = () => reject(req.error ?? new Error('Falha no banco local'));
       })
   );
 }

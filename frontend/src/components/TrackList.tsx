@@ -58,7 +58,9 @@ export function TrackRow({ track: t, index, onPlay, showCover = true, showAlbum,
   const isCurrent = player.current?.track.id === t.id;
   const liked = ui.isLiked(t);
   return (
+    // O clique na linha é atalho do mouse; pelo teclado, o título é um botão (o clique dele sobe até a linha).
     <div
+      role="presentation"
       className={`group grid min-h-14 cursor-pointer select-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-1.5 transition hover:bg-white/[0.06] md:px-3 ${
         selected ? 'bg-accent/20' : ''
       } ${!t.playable ? 'opacity-45' : ''}`}
@@ -90,7 +92,7 @@ export function TrackRow({ track: t, index, onPlay, showCover = true, showAlbum,
       </div>
       <div className="min-w-0 md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] md:items-center md:gap-4">
         <div className="min-w-0">
-          <p className={`truncate text-[15px] font-medium ${isCurrent ? 'text-accent-soft' : ''}`}>{t.title}</p>
+          <button type="button" className={`block w-full truncate text-left text-[15px] font-medium ${isCurrent ? 'text-accent-soft' : ''}`}>{t.title}</button>
           <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted">
             {t.explicit && <Explicit />}
             <DlBadge id={t.id} />

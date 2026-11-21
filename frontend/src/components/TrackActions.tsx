@@ -11,6 +11,7 @@ import { usePlayer } from '../lib/player';
 import { useToast } from '../lib/toast';
 import type { PlaylistCard, Track } from '../lib/types';
 import { Cover, Sheet, Spinner } from './ui';
+import { focusOnMount } from '../lib/focus';
 
 type MenuOpts = { onRemove?: () => void; removeLabel?: string };
 type UiApi = {
@@ -236,7 +237,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
             </button>
             {m.downloadable && (
               st === 'READY' || st === 'EXPIRING' || st === 'QUEUED' || st === 'DOWNLOADING' ? (
-                <button className="menu-item" onClick={() => { removeDownload(m.id); close(); toast('Download removido'); }}>
+                <button className="menu-item" onClick={() => { void removeDownload(m.id); close(); toast('Download removido'); }}>
                   <Trash2 className="h-5 w-5" /> Remover download
                 </button>
               ) : (
@@ -356,9 +357,9 @@ function AddToPlaylist({ tracks, onClose }: { tracks: Track[] | null; onClose: (
       ) : (
         <>
           {creating ? (
-            <form className="mb-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); create(); }}>
-              <input className="input" autoFocus maxLength={100} placeholder="Nome da playlist" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              <button className="btn-primary shrink-0" disabled={!newName.trim() || busy === 'new'}>
+            <form className="mb-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); void create(); }}>
+              <input className="input" ref={focusOnMount} maxLength={100} placeholder="Nome da playlist" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              <button type="submit" className="btn-primary shrink-0" disabled={!newName.trim() || busy === 'new'}>
                 {busy === 'new' ? <Spinner className="h-4 w-4" /> : 'Criar'}
               </button>
             </form>

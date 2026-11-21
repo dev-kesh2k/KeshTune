@@ -20,7 +20,7 @@ function useSidebarPlaylists() {
       api<{ playlists: PlaylistCard[] }>('me/library')
         .then((r) => alive && setItems(r.playlists))
         .catch(() => {});
-    load();
+    void load();
     const offs = [onRealtime('library.changed', load), onRealtime('playlist.updated', load)];
     window.addEventListener('spx:playlists-changed', load);
     return () => {
@@ -46,9 +46,9 @@ export function Layout() {
 
   useEffect(() => {
     const stop = startRealtime();
-    flushPending();
+    void flushPending();
     const online = () => {
-      flushPending();
+      void flushPending();
       toast('Conectado de novo');
     };
     window.addEventListener('online', online);

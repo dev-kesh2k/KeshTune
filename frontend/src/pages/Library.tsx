@@ -11,6 +11,7 @@ import { useTitle } from '../lib/useTitle';
 import type { AlbumCard, ArtistCard, PlaylistCard } from '../lib/types';
 import { Confirm, Cover, Empty, ErrorBox, Field, PageLoading, Sheet, Spinner, Toggle } from '../components/ui';
 import { pagePad } from '../components/Layout';
+import { focusOnMount } from '../lib/focus';
 
 type FolderT = { id: string; name: string; parent_id: string | null };
 type Lib = { liked_count: number; folders: FolderT[]; playlists: (PlaylistCard & { saved_at: string | null })[]; albums: (AlbumCard & { saved_at: string })[]; artists: (ArtistCard & { saved_at: string })[] };
@@ -44,7 +45,7 @@ export function CreatePlaylistSheet({ open, onClose, folderId }: { open: boolean
     <Sheet open={open} onClose={onClose} title="Nova playlist">
       <form onSubmit={submit} className="space-y-4 pt-2">
         <Field label="Nome">
-          <input className="input" required maxLength={100} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Minha playlist" />
+          <input className="input" required maxLength={100} ref={focusOnMount} value={name} onChange={(e) => setName(e.target.value)} placeholder="Minha playlist" />
         </Field>
         <Field label="Descrição (opcional)">
           <textarea className="input min-h-20 py-3" maxLength={300} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -60,7 +61,7 @@ export function CreatePlaylistSheet({ open, onClose, folderId }: { open: boolean
           <span className="text-sm"><span className="block font-medium">Colaborativa</span><span className="text-xs text-muted">Convidados podem adicionar, remover e reordenar</span></span>
           <Toggle checked={collab} onChange={setCollab} label="Colaborativa" />
         </div>
-        <button className="btn-primary w-full" disabled={busy || !name.trim()}>{busy && <Spinner className="h-4 w-4" />} Criar</button>
+        <button type="submit" className="btn-primary w-full" disabled={busy || !name.trim()}>{busy && <Spinner className="h-4 w-4" />} Criar</button>
       </form>
     </Sheet>
   );
@@ -112,7 +113,7 @@ function ImportSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
           <Field label="Nome da playlist (opcional)">
             <input className="input" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="Usa o nome do arquivo" />
           </Field>
-          <button className="btn-primary w-full" disabled={busy || !file}>{busy ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />} Importar</button>
+          <button type="submit" className="btn-primary w-full" disabled={busy || !file}>{busy ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />} Importar</button>
         </form>
       )}
     </Sheet>
@@ -313,8 +314,8 @@ export default function Library() {
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} />
       <Sheet open={!!folderSheet} onClose={() => setFolderSheet(null)} title={folderSheet?.mode === 'rename' ? 'Renomear pasta' : 'Nova pasta'}>
         <form onSubmit={saveFolder} className="space-y-4 pt-2">
-          <input className="input" autoFocus required maxLength={100} value={folderName} onChange={(e) => setFolderName(e.target.value)} placeholder="Nome da pasta" aria-label="Nome da pasta" />
-          <button className="btn-primary w-full" disabled={!folderName.trim()}>Salvar</button>
+          <input className="input" ref={focusOnMount} required maxLength={100} value={folderName} onChange={(e) => setFolderName(e.target.value)} placeholder="Nome da pasta" aria-label="Nome da pasta" />
+          <button type="submit" className="btn-primary w-full" disabled={!folderName.trim()}>Salvar</button>
         </form>
       </Sheet>
       <Sheet open={!!folderMenu} onClose={() => setFolderMenu(null)} title={folderMenu?.name}>

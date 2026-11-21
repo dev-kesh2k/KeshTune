@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 import { Heart, ListPlus, Radio, Share2 } from 'lucide-react';
 import { artistNames, fmtDate, fmtTime } from '../lib/format';
+import { stripBrackets } from '../lib/text';
 import { usePlayer } from '../lib/player';
 import { useFetch } from '../lib/useFetch';
 import { useTitle } from '../lib/useTitle';
@@ -26,7 +27,7 @@ export default function Track() {
   if (loading) return <PageLoading />;
   if (error || !data) return <ErrorBox text={error || 'Faixa não encontrada'} offline={offline} onRetry={() => reload()} />;
   const liked = ui.isLiked(data);
-  const lyricsText = data.lyrics_synced ? data.lyrics!.replace(/\[[^\]]*\]/g, '').replace(/\n{3,}/g, '\n\n').trim() : data.lyrics;
+  const lyricsText = data.lyrics_synced ? stripBrackets(data.lyrics!).replace(/\n{3,}/g, '\n\n').trim() : data.lyrics;
   return (
     <div>
       <CollectionHeader

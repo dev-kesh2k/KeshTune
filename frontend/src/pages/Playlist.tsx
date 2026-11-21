@@ -21,6 +21,7 @@ import { TrackListHeader, TrackRow } from '../components/TrackList';
 import { useUi } from '../components/TrackActions';
 import { Confirm, Cover, Empty, ErrorBox, Field, PageLoading, Section, Sheet, Spinner, Toggle } from '../components/ui';
 import { pagePad } from '../components/Layout';
+import { focusOnMount } from '../lib/focus';
 
 const VIS = { private: 'Playlist privada', public: 'Playlist pública', link: 'Playlist por link' } as const;
 type SortKey = 'custom' | 'title' | 'artist' | 'album' | 'added_at' | 'duration';
@@ -424,7 +425,7 @@ function EditSheet({ open, onClose, data, onSaved }: { open: boolean; onClose: (
             <span className="text-sm font-medium">Colaborativa</span>
             <Toggle checked={collab} onChange={setCollab} label="Colaborativa" />
           </div>
-          <button className="btn-primary w-full" disabled={busy || uploading || !name.trim()}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
+          <button type="submit" className="btn-primary w-full" disabled={busy || uploading || !name.trim()}>{busy && <Spinner className="h-4 w-4" />} Salvar</button>
         </div>
       </form>
     </Sheet>
@@ -533,7 +534,7 @@ function AddSongsSheet({ open, onClose, onAdd, existing }: { open: boolean; onCl
   return (
     <Sheet open={open} onClose={onClose} title="Adicionar músicas" wide>
       <div className="sticky top-0 z-10 bg-surface2 pb-3 pt-2">
-        <input className="input" autoFocus placeholder="Buscar músicas ou artistas" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar músicas" />
+        <input className="input" ref={focusOnMount} placeholder="Buscar músicas ou artistas" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar músicas" />
       </div>
       {busy && <div className="flex justify-center py-4"><Spinner className="h-5 w-5 text-muted" /></div>}
       <ul>
