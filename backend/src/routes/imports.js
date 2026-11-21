@@ -222,7 +222,7 @@ export async function enqueueJob({ kind, url, trackId = null, userId, urgent = f
 
 export function startImportWorker() {
   setInterval(tick, 15000).unref();
-  tick();
+  void tick();
 }
 
 // ---------------- Rotas (admin) ----------------

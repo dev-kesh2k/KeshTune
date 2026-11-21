@@ -9,7 +9,7 @@ import { adminOnly, audit, auth, forgetUser, hashPassword, tempPassword } from '
 import { getSettings } from '../seed.js';
 import { emit } from '../realtime.js';
 import {
-  ah, bad, csvEscape, dateStr, HttpError, int, isEmail, notFound, oneOf, parseCsv, str, uuidParam, uuidv7,
+  ah, bad, csvEscape, dateStr, HttpError, int, isEmail, notFound, oneOf, parseCsv, str, stripTopicSuffix, uuidParam, uuidv7,
 } from '../util.js';
 import { restrictUser } from './auth.js';
 import { AUDIO_DIR, isImageRef, saveImage, TMP_DIR } from './media.js';
@@ -298,7 +298,7 @@ adminRouter.post('/admin/youtube/lookup', ah2(async (req, res) => {
   res.json({
     youtube_id: vid,
     title: data.title,
-    author_name: String(data.author_name || '').replace(/\s*-\s*Topic$/i, ''),
+    author_name: stripTopicSuffix(String(data.author_name || '')),
     thumbnail_url: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
   });
 }));
@@ -699,7 +699,7 @@ adminRouter.get('/admin/reports/plays', ah2(async (req, res) => {
   );
   if (req.query.format === 'csv') {
     const lines = ['Faixa,Artistas,Compositores,Álbum,ISRC,Fonte,Reproduções'];
-    for (const r of rows) lines.push([r.title, r.artists, r.composers, r.album, r.isrc, r.source === 'youtube' ? 'YouTube' : 'Própria', r.plays].map(csvEscape).join(','));
+    for (const r of rows) lines.push([r.title, r.artists, r.composers, r.album, r.isrc, r.source === 'youtube' ? 'YouTube' : 'Própria', r.plays].map((v) => csvEscape(v)).join(','));
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', `attachment; filename="reproducoes-${from}-a-${to}.csv"`);
     return res.send(`﻿${lines.join('\r\n')}\r\n`);

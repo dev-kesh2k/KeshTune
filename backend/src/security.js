@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { one, q } from './db.js';
-import { HttpError, sha256, token } from './util.js';
+import { HttpError, sha256, token, trimEndChar } from './util.js';
 
 const SECRET = process.env.JWT_SECRET || '';
 if (SECRET.length < 32) {
@@ -200,13 +200,13 @@ export function newTotpSecret() {
 }
 function b32decode(s) {
   let bits = '';
-  for (const c of s.replace(/=+$/, '').toUpperCase()) {
+  for (const c of trimEndChar(s, '=').toUpperCase()) {
     const v = B32.indexOf(c);
     if (v < 0) continue;
     bits += v.toString(2).padStart(5, '0');
   }
   const bytes = [];
-  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(Number.parseInt(bits.slice(i, i + 8), 2));
   return Buffer.from(bytes);
 }
 function hotp(key, counter) {

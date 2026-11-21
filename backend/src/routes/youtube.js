@@ -6,7 +6,10 @@ import { Readable } from 'stream';
 import { one, q, tx } from '../db.js';
 import { adminOnly, audit, auth, verifyStream } from '../security.js';
 import { getSettings } from '../seed.js';
-import { ah, bad, forbidden, int, notFound, str, uuidList, uuidParam } from '../util.js';
+import {
+  ah, bad, cleanChannelName, forbidden, int, notFound, splitDashTitle, splitPipes, str, stripOfficialSuffix, stripTitleTags,
+  uuidList, uuidParam,
+} from '../util.js';
 import { hydrateTracks } from '../views.js';
 import { createTrack, findOrCreateArtist } from './admin.js';
 import { AUDIO_DIR, saveImage } from './media.js';
@@ -174,14 +177,13 @@ const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().rep
 function splitTitle(raw, channel) {
   let t = raw
     .replace(/#\S+/g, '')
-    .replace(/\p{Extended_Pictographic}|️/gu, '')
-    .replace(/\s*[([](?:official|oficial|clipe|v[ií]deo|audio|áudio|lyrics?|letra|visualizer|hd|4k|mv)\b[^)\]]*[)\]]/gi, '')
-    .replace(/\s+[-–—]\s*(?:official|oficial)(?:\s+(?:video|v[ií]deo|audio|áudio|clipe))?\s*$/i, '')
+    .replace(/\p{Extended_Pictographic}|️/gu, '');
+  t = stripOfficialSuffix(stripTitleTags(t))
     .replace(/\s+/g, ' ').trim();
-  const pipe = t.split(/\s+\|\s+/);
+  const pipe = splitPipes(t);
   t = pipe.find((p) => /\s[-–—]\s/.test(p)) || pipe[0] || raw; // "| Ao Vivo Em Goiânia", "| Nome do DVD"...
-  const ch = String(channel || '').replace(/\s*-\s*Topic$/i, '').replace(/\s*(?:VEVO|Oficial|Official|TV)$/i, '').trim();
-  const m = /^(.+?)\s+[-–—]\s+(.+)$/.exec(t);
+  const ch = cleanChannelName(String(channel || '')).trim();
+  const m = splitDashTitle(t);
   if (!m) return { artist: ch || 'YouTube', title: t || raw };
   const [a, b] = [m[1].trim(), m[2].trim()];
   if (ch && norm(b).startsWith(norm(ch)) && !norm(a).startsWith(norm(ch))) return { artist: b, title: a };
@@ -190,7 +192,7 @@ function splitTitle(raw, channel) {
 
 // ---------------- Fotos de artistas ----------------
 // Artistas cadastrados a partir de vídeos não têm foto: usa o avatar do canal do YouTube com o mesmo nome.
-const channelName = (s) => norm(String(s || '').replace(/\s*-\s*Topic$/i, '').replace(/\s*(?:VEVO|Oficial|Official|TV)$/i, '')).replace(/ /g, '');
+const channelName = (s) => norm(cleanChannelName(String(s || ''))).replace(/ /g, '');
 
 async function findArtistImage(name) {
   const j = await ytdlpJson(`https://www.youtube.com/results?search_query=${encodeURIComponent(name)}&sp=EgIQAg%253D%253D`, ['--playlist-end', '5']);

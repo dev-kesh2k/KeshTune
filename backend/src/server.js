@@ -6,7 +6,7 @@ import { migrate } from './migrate.js';
 import { getSettings, seed } from './seed.js';
 import { auth } from './security.js';
 import { sseHandler, startRealtime } from './realtime.js';
-import { ah, HttpError, rateLimiter, token } from './util.js';
+import { ah, HttpError, rateLimiter, token, trimEndChar } from './util.js';
 import { authRouter } from './routes/auth.js';
 import { meRouter } from './routes/me.js';
 import { mediaRouter } from './routes/media.js';
@@ -124,7 +124,7 @@ api.use((err, req, res, _next) => {
 });
 
 // O proxy pode repassar /api/..., o caminho completo /<slug>/api/... ou já sem prefixo.
-const publicPath = String(process.env.PUBLIC_PATH || '').replace(/\/+$/, '');
+const publicPath = trimEndChar(String(process.env.PUBLIC_PATH || ''), '/');
 if (publicPath) app.use(`${publicPath}/api`, api);
 app.use('/api', api);
 app.use('/v1', api);
