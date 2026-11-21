@@ -1,7 +1,7 @@
 import express from 'express';
 import { one, q } from '../db.js';
 import { auth } from '../security.js';
-import { ah, int, notFound, oneOf, uuidParam } from '../util.js';
+import { ah, int, notFound, oneOf, splitLines, uuidParam } from '../util.js';
 import { albumCards, ARTIST_JSON, hydrateTracks, playlistCards } from '../views.js';
 import { artistTop, topStale, trendingArtistsBR } from './youtube.js';
 
@@ -193,7 +193,7 @@ catalogRouter.get('/tracks/:id', ah(async (req, res) => {
   );
   if (!t) throw notFound('Faixa não encontrada', 'TRACK_NOT_FOUND');
   const [base] = await hydrateTracks([id], req.user);
-  res.json({ ...base, ...t, lyrics_synced: /^\s*\[\d{1,2}:\d{2}/m.test(t.lyrics || '') });
+  res.json({ ...base, ...t, lyrics_synced: splitLines(t.lyrics || '').some((l) => /^\[\d{1,2}:\d{2}/.test(l.trimStart())) });
 }));
 
 catalogRouter.get('/albums/:id', ah(async (req, res) => {

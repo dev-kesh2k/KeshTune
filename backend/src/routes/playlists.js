@@ -4,7 +4,7 @@ import { one, q, tx } from '../db.js';
 import { auth, audit } from '../security.js';
 import { emit } from '../realtime.js';
 import {
-  ah, bad, csvEscape, forbidden, HttpError, notFound, oneOf, parseCsv, rateLimiter, str, token, uuidList, uuidParam, uuidv7,
+  ah, bad, csvEscape, forbidden, HttpError, notFound, oneOf, parseCsv, rateLimiter, splitLines, str, token, uuidList, uuidParam, uuidv7,
 } from '../util.js';
 import { hydrateTracks, MOSAIC_SQL, playlistCards } from '../views.js';
 import { isImageRef } from './media.js';
@@ -188,6 +188,18 @@ playlistsRouter.post('/playlists/invite/:token/accept', ah(async (req, res) => {
 // ----- Importar CSV / M3U -----
 const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 
+/** "#EXTINF:123 extras,Artista - Música" -> [linha, "123", "Artista - Música"]; null se a linha não for assim. */
+function parseExtinf(l) {
+  if (!l.startsWith('#EXTINF:')) return null;
+  const rest = l.slice(8);
+  const comma = rest.indexOf(',');
+  if (comma < 0) return null;
+  const secs = /^-?\d+/.exec(rest.slice(0, comma));
+  const title = rest.slice(comma + 1);
+  if (!secs || splitLines(title).length > 1) return null;
+  return [l, secs[0], title];
+}
+
 function parseImport(text, filename) {
   const entries = [];
   const isM3u = /^#EXTM3U/m.test(text) || /\.m3u8?$/i.test(filename || '');
@@ -195,7 +207,7 @@ function parseImport(text, filename) {
     let pending = null;
     for (const line of text.split(/\r?\n/)) {
       const l = line.trim();
-      const m = l.match(/^#EXTINF:(-?\d+)[^,]*,(.*)$/);
+      const m = parseExtinf(l);
       if (m) {
         const [artist, ...rest] = m[2].split(' - ');
         pending = rest.length ? { artist: artist.trim(), title: rest.join(' - ').trim(), duration_s: Number(m[1]) } : { title: m[2].trim(), duration_s: Number(m[1]) };
@@ -568,7 +580,7 @@ playlistsRouter.get('/playlists/:id/export', ah(async (req, res) => {
   );
   const fmt = (ms) => `${Math.floor(ms / 60000)}:${String(Math.round((ms % 60000) / 1000)).padStart(2, '0')}`;
   const lines = ['Título,Artista,Álbum,ISRC,Duração,Adicionada em'];
-  for (const r of rows) lines.push([r.title, r.artists, r.album, r.isrc, fmt(r.duration_ms), r.added_at.toISOString()].map(csvEscape).join(','));
+  for (const r of rows) lines.push([r.title, r.artists, r.album, r.isrc, fmt(r.duration_ms), r.added_at.toISOString()].map((v) => csvEscape(v)).join(','));
   const fname = p.name.normalize('NFD').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'playlist';
   res.set('Content-Type', 'text/csv; charset=utf-8');
   res.set('Content-Disposition', `attachment; filename="${fname}.csv"`);

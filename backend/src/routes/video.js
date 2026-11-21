@@ -37,7 +37,7 @@ const quality = (v) => (QUALITIES.includes(Number(v)) ? Number(v) : 720);
 const cache = new Map(); // chave -> { at, items }
 const inflight = new Map();
 const CACHE_DIR = path.join(VIDEO_DIR, 'cache');
-const cacheFile = (key) => path.join(CACHE_DIR, `${crypto.createHash('sha1').update(key).digest('hex')}.json`);
+const cacheFile = (key) => path.join(CACHE_DIR, `${crypto.createHash('sha256').update(key).digest('hex')}.json`);
 async function cached(key, ttlMs, fn, force = false) {
   const hit = cache.get(key);
   if (!force && hit && Date.now() - hit.at < ttlMs) return hit.items;
@@ -192,7 +192,7 @@ export function startVideoWarmup() {
     for (const cat of Object.keys(CATEGORIES)) if (CATEGORIES[cat]) await feed(cat).catch(() => {});
   };
   // Réplicas começam em horários diferentes; quem chegar depois já acha o arquivo pronto
-  setTimeout(run, (30 + Math.random() * 60) * 1000).unref();
+  setTimeout(run, crypto.randomInt(30_000, 90_000)).unref();
   setInterval(run, 50 * 60 * 1000).unref();
 }
 
