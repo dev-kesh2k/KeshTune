@@ -91,21 +91,24 @@ async function details(ids) {
 }
 
 /**
- * Um yt-dlp por vez neste módulo: cada um abre um Node próprio (runtime de JS) e o container tem pouca memória
- * (170 MB); vários juntos estouravam o limite e derrubavam a API inteira.
+ * Fila com no máximo [n] yt-dlp ao mesmo tempo: cada um abre um Node próprio (runtime de JS). Com 170 MB, vários
+ * juntos derrubavam a API; com 2 GB (desde 2026-11-22) cabem alguns em paralelo sem um esperar o outro.
  */
-function lane() {
-  let busy = Promise.resolve();
-  return (fn) => {
-    const run = busy.then(fn, fn);
-    busy = run.catch(() => {});
-    return run;
+function lane(n = 1) {
+  let running = 0;
+  const waiting = [];
+  const next = () => {
+    if (running >= n || !waiting.length) return;
+    running++;
+    const { fn, resolve, reject } = waiting.shift();
+    Promise.resolve().then(fn).then(resolve, reject).finally(() => { running--; next(); });
   };
+  return (fn) => new Promise((resolve, reject) => { waiting.push({ fn, resolve, reject }); next(); });
 }
 // Buscas numa fila e abertura de vídeo noutra (quem aperta tocar não espera o aquecimento das abas)
-const oneAtATime = lane();
-const playLane = lane();
-const warmLane = lane(); // pré-carga dos links (próximo vídeo, primeiros da lista)
+const oneAtATime = lane(2);
+const playLane = lane(3);
+const warmLane = lane(2); // pré-carga dos links (próximo vídeo, primeiros da lista)
 
 /** yt-dlp em modo lista (sem baixar nada): reserva quando a API não responde ou a cota acabou. */
 function ytdlpList(target) {
@@ -234,11 +237,14 @@ function resolveStreams(id, q, force = false, laneFn = playLane) {
     } catch { /* sem arquivo */ }
   }
   const run = (fmt) => laneFn(() => new Promise((resolve, reject) => {
-    execFile(YTDLP, ['-f', fmt, '-g', '--no-playlist', '--no-warnings', ...YTDLP_JS, `https://www.youtube.com/watch?v=${id}`], { timeout: 60000 }, (err, out) => {
-      const urls = String(out || '').trim().split('\n').filter((l) => l.startsWith('http'));
+    // Primeira linha: quando o YouTube libera as URLs (vídeo|áudio|formato único); depois as URLs, uma por linha
+    const ready = '%(requested_formats.0.available_at)s|%(requested_formats.1.available_at)s|%(available_at)s';
+    execFile(YTDLP, ['-f', fmt, '--print', ready, '--print', 'urls', '--no-playlist', '--no-warnings', ...YTDLP_JS, `https://www.youtube.com/watch?v=${id}`], { timeout: 60000 }, (err, out) => {
+      const lines = String(out || '').trim().split('\n');
+      const urls = lines.filter((l) => l.startsWith('http'));
       if (err || !urls.length) return reject(err || new Error('sem URL'));
-      // O YouTube só libera as URLs ~4 s depois de entregá-las (antes disso o googlevideo dá 403): espera aqui.
-      setTimeout(() => resolve(urls), readyDelay());
+      // Antes da hora que o YouTube marcou o googlevideo responde 403: espera só o necessário (às vezes nada).
+      setTimeout(() => resolve(urls), readyDelay(lines[0]));
     });
   }));
   const promise = run(`bv*[height<=${q}][vcodec^=avc1][ext=mp4]+ba[ext=m4a]`)

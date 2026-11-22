@@ -300,11 +300,14 @@ function directAudio(vid, force = false) {
   return promise;
 }
 
-/** Espera até a URL do googlevideo valer: "available_at" do yt-dlp (segundos), ou 4,5 s se não vier; no máximo 12 s. */
+/**
+ * Espera até a URL do googlevideo valer: "available_at" do yt-dlp (segundos; com vários formatos "a|b", vale o maior).
+ * "NA"/vazio = o YouTube não pediu espera (alguns clientes liberam na hora): não espera. No máximo 12 s.
+ */
 export function readyDelay(availableAt) {
-  const at = Number(availableAt) * 1000;
-  const wait = Number.isFinite(at) && at > 0 ? at - Date.now() + 300 : 4500;
-  return Math.min(Math.max(wait, 0), 12000);
+  const at = Math.max(0, ...String(availableAt ?? '').split('|').map(Number).filter((n) => Number.isFinite(n))) * 1000;
+  if (!at) return 0;
+  return Math.min(Math.max(at - Date.now() + 300, 0), 12000);
 }
 
 /** Já descobre a URL do áudio antes de o app pedir o stream (o yt-dlp leva alguns segundos). */

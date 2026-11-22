@@ -39,6 +39,7 @@ A busca do app mostra também a seção **Do YouTube**. Tocar um resultado, ou a
 - **Minhas músicas**: playlist do sistema (`playlists.system_key = 'my_music'`), criada no primeiro download. Recebe cada faixa baixada, com as mais recentes no topo.
 - **Baixar playlist/álbum inteiro**: o botão de download da coleção também baixa as faixas do YouTube (`POST /youtube/downloads` em lote; o servidor baixa uma por vez e o app leva cada uma para Downloads assim que fica pronta).
 - O yt-dlp usa o Node do backend como runtime de JavaScript (`--js-runtimes`); sem isso o YouTube recusa vários vídeos.
+- **Rapidez:** em produção o `YTDLP_BIN` aponta para a versão já descompactada do yt-dlp (`yt-dlp_linux.zip` do release, em `uploads/bin/yt-dlp_dir/`), que abre em ~0,4 s contra ~0,8 s da `yt-dlp_linux` de arquivo único, que se descompacta a cada execução. O YouTube às vezes só libera a URL do googlevideo alguns segundos depois de entregá-la (`available_at`; antes disso dá 403): o servidor espera só quando o campo vem preenchido (`readyDelay` em `youtube.js`). Os vídeos rodam até 3 yt-dlp em paralelo para tocar, 2 para pré-carga e 2 para buscas (`lane(n)` em `video.js`; o container tem 2 GB).
 
 ## App Android (central multimídia do carro)
 
