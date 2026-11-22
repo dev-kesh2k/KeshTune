@@ -13,7 +13,7 @@ import { ah, bad, notFound, str } from '../util.js';
 import { YTDLP_JS } from './imports.js';
 import { decodeEntities, interleave, isoDuration } from '../media-links.js';
 import { UPLOAD_ROOT } from './media.js';
-import { chunkRange, parseRange, sendChunks } from './youtube.js';
+import { chunkRange, parseRange, readyDelay, sendChunks } from './youtube.js';
 
 export const videoRouter = express.Router();
 
@@ -237,7 +237,8 @@ function resolveStreams(id, q, force = false, laneFn = playLane) {
     execFile(YTDLP, ['-f', fmt, '-g', '--no-playlist', '--no-warnings', ...YTDLP_JS, `https://www.youtube.com/watch?v=${id}`], { timeout: 60000 }, (err, out) => {
       const urls = String(out || '').trim().split('\n').filter((l) => l.startsWith('http'));
       if (err || !urls.length) return reject(err || new Error('sem URL'));
-      resolve(urls);
+      // O YouTube só libera as URLs ~4 s depois de entregá-las (antes disso o googlevideo dá 403): espera aqui.
+      setTimeout(() => resolve(urls), readyDelay());
     });
   }));
   const promise = run(`bv*[height<=${q}][vcodec^=avc1][ext=mp4]+ba[ext=m4a]`)

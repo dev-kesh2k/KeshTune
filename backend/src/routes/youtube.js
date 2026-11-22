@@ -278,12 +278,14 @@ function directAudio(vid, force = false) {
   const promise = new Promise((resolve, reject) => {
     execFile(
       YTDLP,
-      ['-f', 'bestaudio[ext=m4a]/bestaudio', '--no-playlist', '--no-warnings', '--print', 'ext', '--print', 'url', ...YTDLP_JS, `https://www.youtube.com/watch?v=${vid}`],
+      ['-f', 'bestaudio[ext=m4a]/bestaudio', '--no-playlist', '--no-warnings', '--print', 'available_at', '--print', 'ext', '--print', 'url', ...YTDLP_JS, `https://www.youtube.com/watch?v=${vid}`],
       { timeout: 60000, windowsHide: true },
       (err, stdout) => {
-        const [ext, url] = String(stdout || '').trim().split('\n');
+        const [availableAt, ext, url] = String(stdout || '').trim().split('\n');
         if (err || !url?.startsWith('http')) return reject(bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED'));
-        resolve({ url, mime: ext === 'webm' ? 'audio/webm' : 'audio/mp4' });
+        // O YouTube só libera a URL alguns segundos depois de entregá-la (o yt-dlp "dorme" o mesmo tempo antes de baixar):
+        // antes disso o googlevideo responde 403. Só resolve quando ela já vale.
+        setTimeout(() => resolve({ url, mime: ext === 'webm' ? 'audio/webm' : 'audio/mp4' }), readyDelay(availableAt));
       }
     );
   });
@@ -296,6 +298,13 @@ function directAudio(vid, force = false) {
   }, () => { if (direct.get(vid) === entry) direct.delete(vid); });
   while (direct.size > 500) direct.delete(direct.keys().next().value);
   return promise;
+}
+
+/** Espera até a URL do googlevideo valer: "available_at" do yt-dlp (segundos), ou 4,5 s se não vier; no máximo 12 s. */
+export function readyDelay(availableAt) {
+  const at = Number(availableAt) * 1000;
+  const wait = Number.isFinite(at) && at > 0 ? at - Date.now() + 300 : 4500;
+  return Math.min(Math.max(wait, 0), 12000);
 }
 
 /** Já descobre a URL do áudio antes de o app pedir o stream (o yt-dlp leva alguns segundos). */
