@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { one, q, tx } from '../db.js';
 import { auth, audit } from '../security.js';
+import { warmMany } from './youtube.js';
 import { emit } from '../realtime.js';
 import {
   ah, bad, csvEscape, forbidden, HttpError, notFound, oneOf, parseCsv, rateLimiter, splitLines, str, token, uuidList, uuidParam, uuidv7,
@@ -287,7 +288,10 @@ playlistsRouter.post('/playlists/import', editLimit, importUpload.single('file')
 // ----- Ler / editar / excluir -----
 playlistsRouter.get('/playlists/:id', ah(async (req, res) => {
   const id = uuidParam(req.params.id);
-  res.json(await playlistDetail(id, req.user, await access(id, req.user)));
+  const detail = await playlistDetail(id, req.user, await access(id, req.user));
+  res.json(detail);
+  // As primeiras do YouTube já ficam prontas (quem abre a playlist costuma tocar logo)
+  warmMany((detail.items || []).map((i) => i.track || i), 3);
 }));
 
 playlistsRouter.patch('/playlists/:id', editLimit, ah(async (req, res) => {
