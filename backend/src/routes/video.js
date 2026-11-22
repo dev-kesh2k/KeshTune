@@ -101,7 +101,7 @@ function lane(n = 1) {
     if (running >= n || !waiting.length) return;
     running++;
     const { fn, resolve, reject } = waiting.shift();
-    Promise.resolve().then(fn).then(resolve, reject).finally(() => { running--; next(); });
+    void Promise.resolve().then(fn).then(resolve, reject).finally(() => { running--; next(); });
   };
   return (fn) => new Promise((resolve, reject) => { waiting.push({ fn, resolve, reject }); next(); });
 }
