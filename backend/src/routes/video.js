@@ -1,6 +1,6 @@
 // Vídeos do YouTube para o app Kesh Vídeo (central multimídia do carro): em alta, busca, reprodução e download.
-// O vídeo passa pelo servidor (as URLs do googlevideo valem só para o IP de quem pediu), em até 720p H.264,
-// que a central decodifica pelo hardware. O download vira um MP4 (vídeo + áudio) que o app baixa e guarda.
+// O vídeo passa pelo servidor (as URLs do googlevideo valem só para o IP de quem pediu), em até 1080p H.264
+// (padrão 720p; a central do carro pede no máximo 720p e decodifica pelo hardware). O download vira um MP4 (vídeo + áudio) que o app baixa e guarda.
 import { execFile, spawn } from 'child_process';
 import crypto from 'crypto';
 import express from 'express';
@@ -22,7 +22,8 @@ const YTDLP = process.env.YTDLP_BIN || 'yt-dlp';
 const YTDLP_EXTRA = (process.env.YTDLP_ARGS || '').split(/\s+/).filter(Boolean);
 const VIDEO_DIR = path.join(UPLOAD_ROOT, 'videos');
 const KEEP_H = Number(process.env.VIDEO_KEEP_H || 48); // MP4 pronto fica no servidor até o app baixar (ou 48 h)
-const QUALITIES = [360, 480, 720];
+const QUALITIES = [360, 480, 720, 1080];
+export const VIDEO_MAX_HEIGHT = QUALITIES[QUALITIES.length - 1]; // vai no /config: o TubeCraft libera o 1080p por ele
 const ytId = (v) => {
   const id = String(v || '');
   if (!/^[\w-]{11}$/.test(id)) throw bad('Vídeo inválido');

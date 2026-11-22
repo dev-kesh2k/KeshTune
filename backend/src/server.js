@@ -19,7 +19,7 @@ import { offlineRouter } from './routes/offline.js';
 import { adminRouter } from './routes/admin.js';
 import { importsRouter, startImportWorker } from './routes/imports.js';
 import { startArtistImageWorker, startMixesWarmup, startOffloadSweeper, youtubeRouter } from './routes/youtube.js';
-import { startVideoSweeper, startVideoWarmup, videoRouter } from './routes/video.js';
+import { startVideoSweeper, startVideoWarmup, VIDEO_MAX_HEIGHT, videoRouter } from './routes/video.js';
 
 const app = express();
 app.set('trust proxy', process.env.TRUST_PROXY ? process.env.TRUST_PROXY.split(',') : 'loopback');
@@ -58,7 +58,7 @@ api.get('/health', async (_req, res) => {
 api.get('/config', ah(async (_req, res) => {
   const s = await getSettings();
   res.set('Cache-Control', 'no-store'); // o admin muda e o app precisa ver na hora
-  res.json({ offline_enabled: s.offline_enabled, youtube_enabled: s.youtube_enabled, max_offline_devices: s.max_offline_devices, max_offline_tracks: s.max_offline_tracks, server_time: new Date().toISOString() });
+  res.json({ offline_enabled: s.offline_enabled, youtube_enabled: s.youtube_enabled, max_offline_devices: s.max_offline_devices, max_offline_tracks: s.max_offline_tracks, video_max_height: VIDEO_MAX_HEIGHT, server_time: new Date().toISOString() });
 }));
 
 // Limite por usuário (spec 8.1): 100 escritas/min; leituras com folga para a navegação no app.
