@@ -25,6 +25,15 @@ const KEEP_H = Number(process.env.VIDEO_KEEP_H || 48); // MP4 pronto fica no ser
 const QUALITIES = [360, 480, 720, 1080];
 // Vídeo com várias dublagens: áudio em português quando o YouTube tem; senão o original (o padrão do yt-dlp é o original)
 const AUDIO_PT = '(ba[ext=m4a][language^=pt]/ba[ext=m4a])';
+// A escolha do áudio vai junto da qualidade numa etiqueta: "720" = português quando houver, "720o" = original
+// (o app manda audio=original). Assim os caches, os links assinados e os arquivos de cada escolha ficam separados.
+const qtag = (qv, audio) => {
+  const raw = String(qv ?? '');
+  const q = quality(raw.replace(/o$/, ''));
+  return audio === 'original' || raw.endsWith('o') ? `${q}o` : String(q);
+};
+const qNum = (t) => Number.parseInt(String(t), 10);
+const audioSel = (t) => (String(t).endsWith('o') ? 'ba[ext=m4a]' : AUDIO_PT);
 export const VIDEO_MAX_HEIGHT = QUALITIES[QUALITIES.length - 1]; // vai no /config: o TubeCraft libera o 1080p por ele
 const ytId = (v) => {
   const id = String(v || '');
@@ -249,7 +258,7 @@ function resolveStreams(id, q, force = false, laneFn = playLane) {
       setTimeout(() => resolve(urls), readyDelay(lines[0]));
     });
   }));
-  const promise = run(`bv*[height<=${q}][vcodec^=avc1][ext=mp4]+${AUDIO_PT}`)
+  const promise = run(`bv*[height<=${qNum(q)}][vcodec^=avc1][ext=mp4]+${audioSel(q)}`)
     .then((u) => (u.length >= 2 ? { video: u[0], audio: u[1] } : { video: u[0], audio: null }))
     .catch(() => run('18').then((u) => ({ video: u[0], audio: null })))
     .catch(() => { throw bad('Não foi possível abrir o vídeo', 'VIDEO_UNAVAILABLE'); });
@@ -275,14 +284,14 @@ function prefetch(ids, q) {
   for (const id of ids.slice(0, 6)) if (/^[\w-]{11}$/.test(id)) resolveStreams(id, q, false, warmLane).catch(() => {});
 }
 videoRouter.post('/video/prefetch', ah(async (req, res) => {
-  prefetch(Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [], quality(req.body?.q));
+  prefetch(Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [], qtag(req.body?.q, req.body?.audio));
   res.json({ ok: true });
 }));
 
 /** Links (assinados, o player não manda o login) do vídeo e do áudio para tocar. */
 videoRouter.get('/video/play/:id', ah(async (req, res) => {
   const id = ytId(req.params.id);
-  const q = quality(req.query.q);
+  const q = qtag(req.query.q, req.query.audio);
   const s = await resolveStreams(id, q);
   res.json({
     video: `vproxy/${id}/video${signed('video', id, q, req.user.id, 6 * 3600)}`,
@@ -294,7 +303,7 @@ videoRouter.get('/video/play/:id', ah(async (req, res) => {
 videoRouter.get('/vproxy/:id/:kind', ah(async (req, res) => {
   const id = ytId(req.params.id);
   const kind = req.params.kind === 'audio' ? 'audio' : 'video';
-  const q = quality(req.query.q);
+  const q = qtag(req.query.q);
   if (!verifyStream(`${kind}:${id}:${q}`, req.query)) return res.status(403).json({ error: { code: 'URL_EXPIRED', message: 'Link expirado' } });
   let closed = false;
   let ac = null;
@@ -368,7 +377,7 @@ function nextJob() {
   let lastWrite = 0;
   const tmp = path.join(VIDEO_DIR, `${id}-${q}.part`);
   const p = spawn(YTDLP, [
-    '-f', `bv*[height<=${q}][vcodec^=avc1][ext=mp4]+${AUDIO_PT}/b[height<=${q}][ext=mp4]/18`,
+    '-f', `bv*[height<=${qNum(q)}][vcodec^=avc1][ext=mp4]+${audioSel(q)}/b[height<=${qNum(q)}][ext=mp4]/18`,
     '--merge-output-format', 'mp4', '--no-playlist', '--no-part', '--newline', '--no-warnings', '-o', `${tmp}.%(ext)s`,
     ...YTDLP_JS, ...YTDLP_EXTRA, `https://www.youtube.com/watch?v=${id}`,
   ]);
@@ -418,7 +427,7 @@ function jobView(id, q, userId) {
 /** Pede o MP4 do vídeo (entra na fila; um por vez). */
 videoRouter.post('/video/downloads', ah(async (req, res) => {
   const id = ytId(req.body?.youtube_id);
-  const q = quality(req.body?.q);
+  const q = qtag(req.body?.q, req.body?.audio);
   const key = `${id}:${q}`;
   const j = jobs.get(key) || readState(id, q);
   if (!fs.existsSync(fileOf(id, q)) && (!j || j.status === 'error')) {
@@ -433,13 +442,13 @@ videoRouter.post('/video/downloads', ah(async (req, res) => {
 }));
 
 videoRouter.get('/video/downloads/:id', ah(async (req, res) => {
-  res.json(jobView(ytId(req.params.id), quality(req.query.q), req.user.id));
+  res.json(jobView(ytId(req.params.id), qtag(req.query.q, req.query.audio), req.user.id));
 }));
 
 /** O app já guardou o vídeo: o servidor apaga o MP4. */
 videoRouter.delete('/video/downloads/:id', ah(async (req, res) => {
   const id = ytId(req.params.id);
-  const q = quality(req.query.q);
+  const q = qtag(req.query.q, req.query.audio);
   fs.rmSync(fileOf(id, q), { force: true });
   fs.rmSync(stateOf(id, q), { force: true });
   jobs.delete(`${id}:${q}`);
@@ -449,7 +458,7 @@ videoRouter.delete('/video/downloads/:id', ah(async (req, res) => {
 /** Arquivo MP4 pronto (link assinado, com Range: o app pode continuar um download interrompido). */
 videoRouter.get('/vfile/:id', ah(async (req, res) => {
   const id = ytId(req.params.id);
-  const q = quality(req.query.q);
+  const q = qtag(req.query.q);
   if (!verifyStream(`file:${id}:${q}`, req.query)) return res.status(403).json({ error: { code: 'URL_EXPIRED', message: 'Link expirado' } });
   const f = fileOf(id, q);
   if (!fs.existsSync(f)) throw notFound('Vídeo não está mais no servidor');
