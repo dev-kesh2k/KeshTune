@@ -284,7 +284,7 @@ function prefetch(ids, q) {
   for (const id of ids.slice(0, 6)) if (/^[\w-]{11}$/.test(id)) resolveStreams(id, q, false, warmLane).catch(() => {});
 }
 videoRouter.post('/video/prefetch', ah(async (req, res) => {
-  prefetch(Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [], qtag(req.body?.q, req.body?.audio));
+  prefetch(Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [], qtag(req.body?.q, req.body?.audio ?? req.query.audio));
   res.json({ ok: true });
 }));
 
@@ -427,7 +427,7 @@ function jobView(id, q, userId) {
 /** Pede o MP4 do vídeo (entra na fila; um por vez). */
 videoRouter.post('/video/downloads', ah(async (req, res) => {
   const id = ytId(req.body?.youtube_id);
-  const q = qtag(req.body?.q, req.body?.audio);
+  const q = qtag(req.body?.q, req.body?.audio ?? req.query.audio);
   const key = `${id}:${q}`;
   const j = jobs.get(key) || readState(id, q);
   if (!fs.existsSync(fileOf(id, q)) && (!j || j.status === 'error')) {
