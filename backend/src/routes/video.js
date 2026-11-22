@@ -23,6 +23,8 @@ const YTDLP_EXTRA = (process.env.YTDLP_ARGS || '').split(/\s+/).filter(Boolean);
 const VIDEO_DIR = path.join(UPLOAD_ROOT, 'videos');
 const KEEP_H = Number(process.env.VIDEO_KEEP_H || 48); // MP4 pronto fica no servidor até o app baixar (ou 48 h)
 const QUALITIES = [360, 480, 720, 1080];
+// Vídeo com várias dublagens: áudio em português quando o YouTube tem; senão o original (o padrão do yt-dlp é o original)
+const AUDIO_PT = '(ba[ext=m4a][language^=pt]/ba[ext=m4a])';
 export const VIDEO_MAX_HEIGHT = QUALITIES[QUALITIES.length - 1]; // vai no /config: o TubeCraft libera o 1080p por ele
 const ytId = (v) => {
   const id = String(v || '');
@@ -221,11 +223,11 @@ const direct = new Map(); // `${id}:${q}` -> { until, promise: { video, audio } 
 
 /** URLs do googlevideo pelo yt-dlp: vídeo H.264 até a qualidade pedida + áudio AAC; sem isso, o MP4 360p junto. */
 function resolveStreams(id, q, force = false, laneFn = playLane) {
-  const key = `${id}:${q}`;
+  const key = `${id}:${q}:pt`;
   const hit = direct.get(key);
   if (!force && hit && hit.until > Date.now()) return hit.promise;
   // Outra réplica já descobriu (arquivo dividido entre elas)
-  const shared = path.join(CACHE_DIR, `play-${id}-${q}.json`);
+  const shared = path.join(CACHE_DIR, `play-${id}-${q}-pt.json`); // -pt: links antigos (áudio original) não valem mais
   if (!force) {
     try {
       const f = JSON.parse(fs.readFileSync(shared, 'utf8'));
@@ -247,7 +249,7 @@ function resolveStreams(id, q, force = false, laneFn = playLane) {
       setTimeout(() => resolve(urls), readyDelay(lines[0]));
     });
   }));
-  const promise = run(`bv*[height<=${q}][vcodec^=avc1][ext=mp4]+ba[ext=m4a]`)
+  const promise = run(`bv*[height<=${q}][vcodec^=avc1][ext=mp4]+${AUDIO_PT}`)
     .then((u) => (u.length >= 2 ? { video: u[0], audio: u[1] } : { video: u[0], audio: null }))
     .catch(() => run('18').then((u) => ({ video: u[0], audio: null })))
     .catch(() => { throw bad('Não foi possível abrir o vídeo', 'VIDEO_UNAVAILABLE'); });
@@ -366,7 +368,7 @@ function nextJob() {
   let lastWrite = 0;
   const tmp = path.join(VIDEO_DIR, `${id}-${q}.part`);
   const p = spawn(YTDLP, [
-    '-f', `bv*[height<=${q}][vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[height<=${q}][ext=mp4]/18`,
+    '-f', `bv*[height<=${q}][vcodec^=avc1][ext=mp4]+${AUDIO_PT}/b[height<=${q}][ext=mp4]/18`,
     '--merge-output-format', 'mp4', '--no-playlist', '--no-part', '--newline', '--no-warnings', '-o', `${tmp}.%(ext)s`,
     ...YTDLP_JS, ...YTDLP_EXTRA, `https://www.youtube.com/watch?v=${id}`,
   ]);
