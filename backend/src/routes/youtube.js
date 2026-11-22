@@ -310,6 +310,28 @@ export function readyDelay(availableAt) {
   return Math.min(Math.max(at - Date.now() + 300, 0), 12000);
 }
 
+/**
+ * Aquece as primeiras faixas do YouTube de uma lista (playlist aberta, tocadas recentemente): quando a pessoa tocar,
+ * a URL já está pronta e liberada e a música começa na hora. No máximo 2 yt-dlp de aquecimento ao mesmo tempo.
+ */
+const warmQueue = [];
+let warming = 0;
+export function warmMany(tracks, n = 3) {
+  for (const t of (tracks || []).filter((x) => x?.source === 'youtube' && x.youtube_id).slice(0, n)) {
+    const hit = direct.get(t.youtube_id);
+    if (hit && hit.until > Date.now() + 20 * 60 * 1000) continue;
+    if (!warmQueue.includes(t.youtube_id)) warmQueue.push(t.youtube_id);
+  }
+  while (warmQueue.length > 30) warmQueue.shift();
+  const pump = () => {
+    while (warming < 2 && warmQueue.length) {
+      warming++;
+      directAudio(warmQueue.shift()).catch(() => {}).finally(() => { warming--; pump(); });
+    }
+  };
+  pump();
+}
+
 /** Já descobre a URL do áudio antes de o app pedir o stream (o yt-dlp leva alguns segundos). */
 export function warmYoutube(vid) {
   if (vid) directAudio(vid).catch(() => {});
@@ -363,11 +385,14 @@ youtubeRouter.get('/youtube/stream/:id', ah(async (req, res) => {
       }
       throw bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED');
     }
-    // URL vencida ou recusada: se veio do cache, pede outra ao yt-dlp uma vez
+    // URL vencida ou recusada: se veio do cache, pede outra ao yt-dlp uma vez. Se é nova, o YouTube ainda não
+    // liberou (às vezes sem avisar no available_at): espera um pouco e tenta a mesma.
     if (up.status === 403 || up.status === 410) {
       await up.body?.cancel().catch(() => {});
-      if (attempt === 0 && a.cached) {
-        fresh = true;
+      if (attempt === 0) {
+        if (a.cached) fresh = true;
+        else await new Promise((r) => setTimeout(r, 4000));
+        if (closed) return;
         continue;
       }
       throw bad('Não foi possível abrir o áudio do YouTube', 'YT_STREAM_FAILED');

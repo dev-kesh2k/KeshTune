@@ -3,7 +3,7 @@ import { one, q } from '../db.js';
 import { auth } from '../security.js';
 import { ah, int, notFound, oneOf, splitLines, uuidParam } from '../util.js';
 import { albumCards, ARTIST_JSON, hydrateTracks, playlistCards } from '../views.js';
-import { artistTop, topStale, trendingArtistsBR } from './youtube.js';
+import { artistTop, topStale, trendingArtistsBR, warmMany } from './youtube.js';
 
 /** Cartões de artista na ordem dos ids. */
 async function artistCards(idList) {
@@ -147,6 +147,7 @@ catalogRouter.get('/browse/home', ah(async (req, res) => {
     catalog_size: g.catalogSize, recent, mix, top, fresh, releases: g.releases, followed_releases: followedReleases, my_playlists: myPlaylists,
     public_playlists: publicPlaylists, artists, my_artists: myArtists,
   });
+  warmMany(recent, 4); // as primeiras "tocadas recentemente" já ficam prontas para tocar na hora
 }));
 
 catalogRouter.get('/me/recommendations', ah(async (req, res) => {
